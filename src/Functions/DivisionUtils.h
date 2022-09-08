@@ -179,4 +179,19 @@ struct ModuloLegacyImpl : ModuloImpl<A, B>
     using ResultType = typename NumberTraits::ResultOfModuloLegacy<A, B>::Type;
 };
 
+template <typename A, typename B>
+struct NonNegativeModuloImpl : ModuloImpl<A, B>
+{
+    using ResultType = typename ModuloImpl<A, B>::ResultType;
+
+    template <typename Result = ResultType>
+    static inline ResultType apply(A a, B b)
+    {
+        Result ret = ModuloImpl<A, B>::apply(a, b);
+        if (ret < 0)
+            ret = ret + b;
+        return ret;
+    }
+};
+
 }

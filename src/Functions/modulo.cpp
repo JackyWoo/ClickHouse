@@ -176,4 +176,12 @@ REGISTER_FUNCTION(ModuloLegacy)
     factory.registerFunction<FunctionModuloLegacy>();
 }
 
+struct NameNonNegativeModulo { static constexpr auto name = "nonNegativeMod"; };
+using FunctionNonNegativeModulo = BinaryArithmeticOverloadResolver<NonNegativeModuloImpl, NameNonNegativeModulo, false>;
+
+REGISTER_FUNCTION(NonNegativeModulo)
+{
+    factory.registerFunction<FunctionNonNegativeModulo>();
+}
+
 }
