@@ -406,6 +406,30 @@ struct MurmurHash3Impl32
     static constexpr bool use_int_hash_for_pods = false;
 };
 
+struct MurmurHashSpark3Impl32
+{
+    static constexpr auto name = "murmurHashSpark3_32";
+    using ReturnType = Int32;
+
+    static Int32 apply(const char * data, const size_t size)
+    {
+        union
+        {
+            Int32 h;
+            char bytes[sizeof(h)];
+        };
+        MurmurHashSpark3_x86_32(data, size, 42, bytes);
+        return h;
+    }
+
+    static Int32 combineHashes(Int32 h1, Int32 h2)
+    {
+        return IntHash32Impl::apply(h1) ^ h2;
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
 struct MurmurHash3Impl64
 {
     static constexpr auto name = "murmurHash3_64";
@@ -1472,6 +1496,7 @@ using FunctionMurmurHash2_32 = FunctionAnyHash<MurmurHash2Impl32>;
 using FunctionMurmurHash2_64 = FunctionAnyHash<MurmurHash2Impl64>;
 using FunctionGccMurmurHash = FunctionAnyHash<GccMurmurHashImpl>;
 using FunctionMurmurHash3_32 = FunctionAnyHash<MurmurHash3Impl32>;
+using FunctionMurmurHashSpark3_32 = FunctionAnyHash<MurmurHashSpark3Impl32>;
 using FunctionMurmurHash3_64 = FunctionAnyHash<MurmurHash3Impl64>;
 using FunctionMurmurHash3_128 = FunctionAnyHash<MurmurHash3Impl128>;
 
