@@ -17,6 +17,7 @@ void registerTableFunctionValues(TableFunctionFactory & factory);
 void registerTableFunctionInput(TableFunctionFactory & factory);
 void registerTableFunctionGenerate(TableFunctionFactory & factory);
 void registerTableFunctionMongoDB(TableFunctionFactory & factory);
+void registerTableFunctionRedis(TableFunctionFactory & factory);
 
 void registerTableFunctionMeiliSearch(TableFunctionFactory & factory);
 
