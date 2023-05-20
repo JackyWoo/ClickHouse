@@ -4,6 +4,7 @@
 #include <Poco/Redis/Command.h>
 #include <Poco/Redis/Array.h>
 
+#include <Core/Defines.h>
 #include <base/BorrowedObjectPool.h>
 
 namespace DB
@@ -12,6 +13,9 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
+
+static constexpr size_t REDIS_MAX_BLOCK_SIZE = DEFAULT_BLOCK_SIZE;
+static constexpr size_t REDIS_LOCK_ACQUIRE_TIMEOUT_MS = 5000;
 
 enum class RedisStorageType
 {

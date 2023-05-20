@@ -64,9 +64,6 @@ namespace DB
         factory.registerSource("redis", create_table_source);
     }
 
-    static constexpr size_t REDIS_MAX_BLOCK_SIZE = DEFAULT_BLOCK_SIZE;
-    static constexpr size_t REDIS_LOCK_ACQUIRE_TIMEOUT_MS = 5000;
-
     RedisDictionarySource::RedisDictionarySource(
         const DictionaryStructure & dict_struct_,
         const RedisConfiguration & configuration_,

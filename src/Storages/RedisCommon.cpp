@@ -7,7 +7,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_REDIS_STORAGE_TYPE;
-    extern const int REDIS_LOCK_ACQUIRE_TIMEOUT_MS;
     extern const int INTERNAL_REDIS_ERROR;
     extern const int TIMEOUT_EXCEEDED;
 }
@@ -49,12 +48,12 @@ RedisConnectionPtr getRedisConnection(RedisPoolPtr pool, const RedisConfiguratio
     RedisClientPtr client;
     bool ok = pool->tryBorrowObject(client,
         [] { return std::make_unique<Poco::Redis::Client>(); },
-        ErrorCodes::REDIS_LOCK_ACQUIRE_TIMEOUT_MS);
+        REDIS_LOCK_ACQUIRE_TIMEOUT_MS);
 
     if (!ok)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
                         "Could not get connection from pool, timeout exceeded {} seconds",
-                        ErrorCodes::REDIS_LOCK_ACQUIRE_TIMEOUT_MS);
+                        REDIS_LOCK_ACQUIRE_TIMEOUT_MS);
 
     if (!client->isConnected())
     {
