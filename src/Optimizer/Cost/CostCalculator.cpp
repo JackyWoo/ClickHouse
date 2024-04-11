@@ -224,7 +224,8 @@ Cost CostCalculator::visit(JoinStep & step)
     Float64 probe_mem_cost = 0.0;
 
     /// broad cast join
-    if (child_props[1].distribution.type == Distribution::Replicated)
+    auto right_table_distribution_type = child_props[1].distribution.type;
+    if (right_table_distribution_type == Distribution::Replicated)
     {
         build_cpu_cost *= node_count;
         build_mem_cost *= node_count;
@@ -246,7 +247,7 @@ Cost CostCalculator::visit(ExchangeDataStep & step)
 
     Cost cost(cost_weight, 0.0, 0.0, input.getDataSize());
 
-    if (distribution_type != Distribution::Replicated)
+    if (distribution_type == Distribution::Replicated)
         cost.multiplyBy(node_count);
 
     /// TODO ExchangeDataStep required child distribution is any and here we do not know the real nodes count
