@@ -526,7 +526,7 @@ void TCPHandler::runImpl()
 
             /// For query coordination
             /// SECONDARY_QUERY fragments_request parse fragments and add it to FragmentMgr, it's job finished.
-            if (state.fragments_request && query_context->getSettingsRef().allow_experimental_query_coordination
+            if (state.fragments_request && query_context->isDistributedForQueryCoord()
                 && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
             {
                 auto specified_cluster = query_context->getClusters().find(query_context->getQueryCoordinationMetaInfo().cluster_name)->second;
@@ -556,7 +556,7 @@ void TCPHandler::runImpl()
                     state.io.onFinish();
             };
 
-            if (query_context->getSettingsRef().allow_experimental_query_coordination && query_context->isDistributedForQueryCoord())
+            if (query_context->isDistributedForQueryCoord())
             {
                 processOrdinaryQueryWithCoordination(finish_or_cancel);
             }
@@ -1008,10 +1008,10 @@ void TCPHandler::processInsertQuery()
 
 void TCPHandler::processOrdinaryQueryWithCoordination(std::function<void()> finish_or_cancel)
 {
-    bool initial_query_coordination = query_context->getSettingsRef().allow_experimental_query_coordination
+    bool initial_query_coordination = query_context->isDistributedForQueryCoord()
         && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
 
-    bool secondary_query_coordination = query_context->getSettingsRef().allow_experimental_query_coordination
+    bool secondary_query_coordination = query_context->isDistributedForQueryCoord()
         && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
     if (secondary_query_coordination)
@@ -1053,7 +1053,6 @@ void TCPHandler::processOrdinaryQueryWithCoordination(std::function<void()> fini
     {
         auto & pipeline = state.io.pipeline;
 
-        if (query_context->getSettingsRef().allow_experimental_query_deduplication)
         {
             std::lock_guard lock(task_callback_mutex);
             sendPartUUIDs();
@@ -1151,8 +1150,6 @@ void TCPHandler::processOrdinaryQueryWithCoordination(std::function<void()> fini
         }
 
         sendProgress();
-
-
         finish_or_cancel();
     }
 }
@@ -1977,6 +1974,7 @@ void TCPHandler::receiveFragments()
 
     LOG_DEBUG(log, "Receive QueryCoordinationMetaInfo {}", meta_info.toString());
     query_context->addQueryCoordinationMetaInfo(meta_info.cluster_name, meta_info.storages, meta_info.sharding_keys);
+    query_context->setDistributedForQueryCoord(true);
 }
 
 void TCPHandler::receiveQuery()

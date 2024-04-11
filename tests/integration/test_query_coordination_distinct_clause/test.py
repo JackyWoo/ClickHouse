@@ -18,7 +18,7 @@ def started_cluster():
         cluster.start()
 
         node1.query(
-            """CREATE TABLE test_distinct ON CLUSTER test_two_shards (id UInt32, val String, name String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/test_distinct', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
+            """CREATE TABLE test_distinct ON CLUSTER test_two_shards (id UInt32, val String, name String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_distinct/{shard}', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
         )
 
         node1.query(

@@ -291,8 +291,6 @@ protected:
     InsertionTableInfo insertion_table_info;  /// Saved information about insertion table in query context
     bool is_distributed = false;  /// Whether the current context it used for distributed query
 
-    bool is_distributed_for_query_coordination = false;  /// Whether the current context it used for distributed query for query coordination
-
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
 
@@ -314,6 +312,9 @@ protected:
 
     /// This parameter can be set by the HTTP client to tune the behavior of output formats for compatibility.
     UInt64 client_protocol_version = 0;
+
+    /// Whether the current context it used for distributed query for query coordination
+    bool is_distributed_for_query_coordination = false;
 
     /// for query coordination
     Int32 fragment_id_counter = 0;
@@ -590,7 +591,7 @@ public:
         return ++fragment_id_counter;
     }
 
-    bool addQueryCoordinationMetaInfo(String cluster_name_, const std::vector<StorageID> & storages_, const std::vector<String> & sharding_keys_);
+    void addQueryCoordinationMetaInfo(String cluster_name_, const std::vector<StorageID> & storages_, const std::vector<String> & sharding_keys_);
     const QueryCoordinationMetaInfo & getQueryCoordinationMetaInfo() const;
 
     void setQuotaKey(String quota_key_);

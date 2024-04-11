@@ -124,58 +124,58 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
             ApplyWithSubqueryVisitor().visit(cloned_query);
         }
 
-        ReplaceDistributedTableNameVisitor visitor(context);
-        visitor.visit(cloned_query);
-
-        if (visitor.has_table_function || visitor.has_local_table)
-            context->setDistributedForQueryCoord(false);
-
-        String cluster_name;
-        if (visitor.has_distributed_table)
-        {
-            cluster_name = visitor.clusters[0]->getName();
-            /// remote() cluster_name is empty
-            if (cluster_name.empty())
-                context->setDistributedForQueryCoord(false);
-
-            for (size_t i = 1; i < visitor.clusters.size(); ++i)
-                /// multiple cluster
-                if (cluster_name != visitor.clusters[i]->getName())
-                    context->setDistributedForQueryCoord(false);
-
-            if (context->addQueryCoordinationMetaInfo(cluster_name, visitor.storages, visitor.sharding_keys))
-                context->setDistributedForQueryCoord(true);
-            else
-                context->setDistributedForQueryCoord(false); /// maybe union query
-        }
-
-        /// TODO remove the code block when we send query plan instead of SQL to nodes.
-        if (visitor.has_non_merge_tree_table)
-            context->setDistributedForQueryCoord(false);
-
         /// Temporarily disable query coordination for trivial count optimization.
         /// The judgment for optimize_trivial_count is not strict, but it is sufficient.
         /// TODO remove the code block when we send query plan instead of SQL to nodes.
         if (optimizeTrivialCount(query_ptr, context->getSettingsRef()))
+        {
+            LOG_DEBUG(log, "Disable query coordination for trivial count optimization is enabled");
+            query_coordination_enabled = false;
             context->setDistributedForQueryCoord(false);
+            return;
+        }
 
-        if (context->isDistributedForQueryCoord())
+        ReplaceDistributedTableNameVisitor visitor(context);
+        visitor.visit(cloned_query);
+
+        if (visitor.has_table_function || visitor.has_local_table)
+            query_coordination_enabled = false;
+        /// TODO remove the code block when we send query plan instead of SQL to nodes.
+        else if (visitor.has_non_merge_tree_table)
+            query_coordination_enabled = false;
+        else
+        {
+            String cluster_name = visitor.clusters[0]->getName();
+            /// remote() cluster_name is empty
+            if (cluster_name.empty())
+                query_coordination_enabled = false;
+            else
+            {
+                for (size_t i = 1; i < visitor.clusters.size(); ++i)
+                    /// multiple cluster
+                    if (cluster_name != visitor.clusters[i]->getName())
+                        query_coordination_enabled = false;
+            }
+
+            query_coordination_enabled = true;
+            context->addQueryCoordinationMetaInfo(cluster_name, visitor.storages, visitor.sharding_keys);
+        }
+
+        if (query_coordination_enabled)
             query_ptr = cloned_query;
         else
             /// restore changed settings
             for (const auto & change : setting_changes)
                 context->setSetting(change.name, change.value);
 
-        context->setSetting("allow_experimental_query_coordination", context->isDistributedForQueryCoord());
-        LOG_DEBUG(log, "query_coordination_enabled = {}", query_coordination_enabled);
+        context->setDistributedForQueryCoord(query_coordination_enabled);
     }
     else
     {
-        context->setDistributedForQueryCoord(true);
+        query_coordination_enabled = context->isDistributedForQueryCoord();
     }
 
-    query_coordination_enabled = context->isDistributedForQueryCoord();
-    LOG_DEBUG(log, "query_coordination_enabled = {}", query_coordination_enabled);
+    LOG_DEBUG(log, "Enabled query coordination {}", query_coordination_enabled);
 }
 
 /// Disable use_index_for_in_with_subqueries
@@ -207,6 +207,7 @@ void InterpreterSelectQueryCoordination::buildQueryPlanIfNeeded()
 {
     if (plan.isInitialized())
         return;
+
     if (context->getSettingsRef().allow_experimental_analyzer)
         plan = InterpreterSelectQueryAnalyzer(query_ptr, context, options).extractQueryPlan();
     else if (query_ptr->as<ASTSelectQuery>())

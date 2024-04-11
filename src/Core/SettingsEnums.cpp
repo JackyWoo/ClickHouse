@@ -218,4 +218,9 @@ IMPLEMENT_SETTING_ENUM(CBOStepExecutionMode, ErrorCodes::BAD_ARGUMENTS,
                         {"two_stage", CBOStepExecutionMode::TWO_STAGE},
                         {"determined_by_optimizer", CBOStepExecutionMode::DETERMINED_BY_OPTIMIZER}})
 
+IMPLEMENT_SETTING_ENUM(CBOJoinDistributionMode, ErrorCodes::BAD_ARGUMENTS,
+                       {{"replicated", CBOJoinDistributionMode::REPLICATED},
+                        {"hashed", CBOJoinDistributionMode::HASHED},
+                        {"determined_by_optimizer", CBOJoinDistributionMode::DETERMINED_BY_OPTIMIZER}})
+
 }

@@ -160,11 +160,11 @@ Cost CostCalculator::visit(JoinStep & step)
 {
     auto right_table_distribution_type = child_props[1].distribution.type;
 
-    if (cbo_settings.cbo_join_didtribution_mode == CBOJoinDistributionMode::REPLICATED &&
+    if (cbo_settings.cbo_join_distribution_mode == CBOJoinDistributionMode::REPLICATED &&
         right_table_distribution_type != Distribution::Replicated)
         return Cost::infinite(cost_weight);
 
-    if (cbo_settings.cbo_join_didtribution_mode == CBOJoinDistributionMode::HASHED &&
+    if (cbo_settings.cbo_join_distribution_mode == CBOJoinDistributionMode::HASHED &&
         right_table_distribution_type != Distribution::Hashed)
         return Cost::infinite(cost_weight);
 

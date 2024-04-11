@@ -1577,7 +1577,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         /// Read the data from Storage. from_stage - to what stage the request was completed in Storage.
         executeFetchColumns(from_stage, query_plan);
 
-        if (query_info.prewhere_info && query_info.prewhere_info->prewhere_actions && context->getSettingsRef().allow_experimental_query_coordination)
+        if (query_info.prewhere_info && query_info.prewhere_info->prewhere_actions && context->isDistributedForQueryCoord())
             addBuildSubqueriesForSetsStep(query_plan, context, *prepared_sets, {query_info.prewhere_info->prewhere_actions});
 
         LOG_TRACE(log, "{} -> {}", QueryProcessingStage::toString(from_stage), QueryProcessingStage::toString(options.to_stage));
@@ -2035,7 +2035,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         }
     }
 
-    if (!context->getSettingsRef().allow_experimental_query_coordination)
+    if (!context->isDistributedForQueryCoord())
         executeSubqueriesInSetsAndJoins(query_plan);
 }
 
@@ -2686,7 +2686,7 @@ void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsD
     where_step->setStepDescription("WHERE");
     query_plan.addStep(std::move(where_step));
 
-    if (context->getSettingsRef().allow_experimental_query_coordination)
+    if (context->isDistributedForQueryCoord())
         addBuildSubqueriesForSetsStep(query_plan, context, *prepared_sets, {expression});
 }
 
@@ -2764,7 +2764,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
     expression_before_aggregation->setStepDescription("Before GROUP BY");
     query_plan.addStep(std::move(expression_before_aggregation));
 
-    if (context->getSettingsRef().allow_experimental_query_coordination)
+    if (context->isDistributedForQueryCoord())
         addBuildSubqueriesForSetsStep(query_plan, context, *prepared_sets, {expression});
 
     AggregateDescriptions aggregates = query_analyzer->aggregates();
@@ -2864,7 +2864,7 @@ void InterpreterSelectQuery::executeHaving(QueryPlan & query_plan, const Actions
     having_step->setStepDescription("HAVING");
     query_plan.addStep(std::move(having_step));
 
-    if (context->getSettingsRef().allow_experimental_query_coordination)
+    if (context->isDistributedForQueryCoord())
         addBuildSubqueriesForSetsStep(query_plan, context, *prepared_sets, {expression});
 }
 
@@ -2887,7 +2887,7 @@ void InterpreterSelectQuery::executeTotalsAndHaving(
 
     query_plan.addStep(std::move(totals_having_step));
 
-    if (context->getSettingsRef().allow_experimental_query_coordination)
+    if (context->isDistributedForQueryCoord())
         addBuildSubqueriesForSetsStep(query_plan, context, *prepared_sets, {expression});
 }
 

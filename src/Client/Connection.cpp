@@ -813,11 +813,12 @@ void Connection::sendFragments(
     const FragmentsRequest & fragment,
     const QueryCoordinationMetaInfo & meta_info)
 {
+    LOG_DEBUG(log_wrapper.get(), "Sending query {}", query);
     writeVarUInt(Protocol::Client::PlanFragments, *out);
     sendQuery(timeouts, query, query_parameters, query_id_, stage, settings, client_info, true, {}, false);
     fragment.write(*out);
 
-    LOG_DEBUG(log_wrapper.get(), "Send QueryCoordinationMetaInfo {}", meta_info.toString());
+    LOG_DEBUG(log_wrapper.get(), "Sending QueryCoordinationMetaInfo {}", meta_info.toString());
     meta_info.write(*out);
     sendData(Block(), "", false); // tcphandler and executeQuery use initializeExternalTablesIfSet
     out->next();

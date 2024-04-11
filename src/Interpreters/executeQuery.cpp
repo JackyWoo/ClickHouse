@@ -1278,7 +1278,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 if (*implicit_txn_control)
                     execute_implicit_tcl_query(context, ASTTransactionControl::COMMIT);
 
-                if (context->getSettingsRef().allow_experimental_query_coordination)
+                if (context->isDistributedForQueryCoord())
                     ExchangeManager::getInstance().removeExchangeDataSources(elem.client_info.current_query_id);
             };
 
@@ -1296,7 +1296,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 logQueryException(elem, context, start_watch, ast, query_span, internal, log_error);
 
-                if (context->getSettingsRef().allow_experimental_query_coordination)
+                if (context->isDistributedForQueryCoord())
                     ExchangeManager::getInstance().removeExchangeDataSources(elem.client_info.current_query_id);
             };
 

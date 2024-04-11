@@ -407,7 +407,7 @@ void addExpressionStep(QueryPlan & query_plan,
     query_plan.addStep(std::move(expression_step));
 
     auto query_context = planner_context->getQueryContext();
-    if (expression_actions && query_context->getSettingsRef().allow_experimental_query_coordination)
+    if (expression_actions && query_context->isDistributedForQueryCoord())
         addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, {expression_actions});
 }
 
@@ -427,7 +427,7 @@ void addFilterStep(QueryPlan & query_plan,
     query_plan.addStep(std::move(where_step));
 
     auto query_context = planner_context->getQueryContext();
-    if (filter_analysis_result.filter_actions && query_context->getSettingsRef().allow_experimental_query_coordination)
+    if (filter_analysis_result.filter_actions && query_context->isDistributedForQueryCoord())
         addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, {filter_analysis_result.filter_actions});
 }
 
@@ -639,7 +639,7 @@ void addTotalsHavingStep(QueryPlan & query_plan,
         need_finalize);
     query_plan.addStep(std::move(totals_having_step));
 
-    if (having_analysis_result.filter_actions && query_context->getSettingsRef().allow_experimental_query_coordination)
+    if (having_analysis_result.filter_actions && query_context->isDistributedForQueryCoord())
         addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, {having_analysis_result.filter_actions});
 }
 
@@ -1510,7 +1510,7 @@ void Planner::buildPlanForQueryNode()
         if (table_expression_data.getPrewhereFilterActions())
         {
             result_actions_to_execute.push_back(table_expression_data.getPrewhereFilterActions());
-            if (query_context->getSettingsRef().allow_experimental_query_coordination)
+            if (query_context->isDistributedForQueryCoord())
                 addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, {table_expression_data.getPrewhereFilterActions()});
         }
 
@@ -1759,7 +1759,7 @@ void Planner::buildPlanForQueryNode()
         addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context);
     }
 
-    if (!select_query_options.only_analyze && !planner_context->getQueryContext()->getSettingsRef().allow_experimental_query_coordination)
+    if (!select_query_options.only_analyze && !planner_context->getQueryContext()->isDistributedForQueryCoord())
         addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, result_actions_to_execute);
 
     query_node_to_plan_step_mapping[&query_node] = query_plan.getRootNode();

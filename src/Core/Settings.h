@@ -891,7 +891,7 @@ class IColumn;
     M(CBOStepExecutionMode, cbo_topn_mode, CBOStepExecutionMode::DETERMINED_BY_OPTIMIZER, "TopN step execution mode, only used when CBO is enabled.", 0) \
     M(CBOStepExecutionMode, cbo_sorting_mode, CBOStepExecutionMode::DETERMINED_BY_OPTIMIZER, "Sorting step execution mode, only used when CBO is enabled.", 0) \
     M(CBOStepExecutionMode, cbo_limiting_mode, CBOStepExecutionMode::DETERMINED_BY_OPTIMIZER, "Limit step execution mode, only used when CBO is enabled.", 0) \
-    M(CBOJoinDistributionMode, cbo_join_didtribution_mode, CBOJoinDistributionMode::DETERMINED_BY_OPTIMIZER, "Join replication mode, only used when CBO is enabled.", 0) \
+    M(CBOJoinDistributionMode, cbo_join_distribution_mode, CBOJoinDistributionMode::DETERMINED_BY_OPTIMIZER, "Join replication mode, only used when CBO is enabled.", 0) \
     M(Float, cost_cpu_weight, 0.2f, "Represent the weight of cpu in cost modeling.", 0) \
     M(Float, cost_mem_weight, 0.2f, "Represent the weight of memory in cost modeling.", 0) \
     M(Float, cost_net_weight, 0.6f, "Represent the weight of network in cost modeling.", 0) \

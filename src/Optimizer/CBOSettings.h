@@ -29,7 +29,7 @@ struct CBOSettings
 
     /// Provide a method with which user can specify join data distribution mode.
     /// Default is calculated by CBO optimizer.
-    CBOJoinDistributionMode cbo_join_didtribution_mode;
+    CBOJoinDistributionMode cbo_join_distribution_mode;
 
     static CBOSettings fromSettings(const Settings & from);
     static CBOSettings fromContext(ContextPtr from);

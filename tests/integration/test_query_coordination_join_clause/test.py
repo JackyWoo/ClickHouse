@@ -75,9 +75,9 @@ def exec_query_compare_result(query_text):
 # [GLOBAL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI|ANY|ASOF] JOIN <right_table>
 # (ON <expr_list>)|(USING <column_list>) ...
 
-# def test_self_join(started_cluster):
-#     exec_query_compare_result(
-#         "SELECT t1.name, t1.text FROM table_1 as t1 INNER JOIN table_1 as t2 ON t1.id = t2.id AND startsWith(t1.text, '123') ORDER BY t1.name, t1.text")
+def test_self_join(started_cluster):
+    exec_query_compare_result(
+        "SELECT t1.name, t1.val FROM table_1 as t1 INNER JOIN table_1 as t2 ON t1.id = t2.id AND startsWith(t1.name, '123') ORDER BY t1.name")
 
 
 def test_inner_join(started_cluster):

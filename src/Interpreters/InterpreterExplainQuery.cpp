@@ -516,7 +516,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN fragment");
 
             if (!getContext()->getSettingsRef().allow_experimental_query_coordination)
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only query with coordination is supported for EXPLAIN fragment");
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only query with coordination is supported for EXPLAIN fragment, you can enable it by setting allow_experimental_query_coordination=1.");
 
             {
                 auto settings = checkAndGetSettings<FragmentSettings>(ast.getSettings());
