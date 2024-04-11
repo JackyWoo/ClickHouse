@@ -158,6 +158,16 @@ Cost CostCalculator::visit(LimitStep & step)
 /// Now only hash join
 Cost CostCalculator::visit(JoinStep & step)
 {
+    auto right_table_distribution_type = child_props[1].distribution.type;
+
+    if (cbo_settings.cbo_join_didtribution_mode == CBOJoinDistributionMode::REPLICATED &&
+        right_table_distribution_type != Distribution::Replicated)
+        return Cost::infinite(cost_weight);
+
+    if (cbo_settings.cbo_join_didtribution_mode == CBOJoinDistributionMode::HASHED &&
+        right_table_distribution_type != Distribution::Hashed)
+        return Cost::infinite(cost_weight);
+
     const auto & left_input = input_statistics[0];
     const auto & right_input = input_statistics[1];
 
@@ -224,7 +234,6 @@ Cost CostCalculator::visit(JoinStep & step)
     Float64 probe_mem_cost = 0.0;
 
     /// broad cast join
-    auto right_table_distribution_type = child_props[1].distribution.type;
     if (right_table_distribution_type == Distribution::Replicated)
     {
         build_cpu_cost *= node_count;

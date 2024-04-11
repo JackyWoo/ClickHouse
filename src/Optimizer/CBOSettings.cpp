@@ -12,6 +12,7 @@ CBOSettings CBOSettings::fromSettings(const Settings & from)
     settings.cbo_topn_mode = from.cbo_topn_mode;
     settings.cbo_sorting_mode = from.cbo_sorting_mode;
     settings.cbo_limiting_mode = from.cbo_limiting_mode;
+    settings.cbo_join_didtribution_mode = from.cbo_join_didtribution_mode;
     return settings;
 }
 

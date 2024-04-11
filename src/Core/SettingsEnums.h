@@ -278,4 +278,13 @@ enum class CBOStepExecutionMode
 };
 
 DECLARE_SETTING_ENUM(CBOStepExecutionMode)
+
+enum class CBOJoinDistributionMode
+{
+    REPLICATED,
+    HASHED,
+    DETERMINED_BY_OPTIMIZER
+};
+
+DECLARE_SETTING_ENUM(CBOJoinDistributionMode)
 }
