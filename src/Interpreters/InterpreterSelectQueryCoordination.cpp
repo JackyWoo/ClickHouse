@@ -145,20 +145,18 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
             query_coordination_enabled = false;
         else
         {
-            String cluster_name = visitor.clusters[0]->getName();
-            /// remote() cluster_name is empty
-            if (cluster_name.empty())
+            if (visitor.clusters.empty())
+                query_coordination_enabled = false;
+            else if (visitor.clusters.size() > 1)
+                query_coordination_enabled = false;
+            else if (visitor.clusters[0]->getName().empty()) /// remote() cluster_name is empty // TODO support
                 query_coordination_enabled = false;
             else
             {
-                for (size_t i = 1; i < visitor.clusters.size(); ++i)
-                    /// multiple cluster
-                    if (cluster_name != visitor.clusters[i]->getName())
-                        query_coordination_enabled = false;
+                query_coordination_enabled = true;
+                String cluster_name = visitor.clusters[0]->getName();
+                context->addQueryCoordinationMetaInfo(cluster_name, visitor.storages, visitor.sharding_keys);
             }
-
-            query_coordination_enabled = true;
-            context->addQueryCoordinationMetaInfo(cluster_name, visitor.storages, visitor.sharding_keys);
         }
 
         if (query_coordination_enabled)

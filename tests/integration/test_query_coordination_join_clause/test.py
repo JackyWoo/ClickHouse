@@ -26,7 +26,7 @@ def started_cluster():
         cluster.start()
 
         node1.query(
-            """CREATE TABLE local_table_1 ON CLUSTER test_two_shards (id UInt32, val String, name String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/local_table_1', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
+            """CREATE TABLE local_table_1 ON CLUSTER test_two_shards (id UInt32, val String, name String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/local_table_1', '{replica}') ORDER BY id SETTINGS index_granularity=2;"""
         )
 
         node1.query(
@@ -34,7 +34,7 @@ def started_cluster():
         )
 
         node1.query(
-            """CREATE TABLE local_table_2 ON CLUSTER test_two_shards (id UInt32, text String, scores UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/local_table_2', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
+            """CREATE TABLE local_table_2 ON CLUSTER test_two_shards (id UInt32, text String, scores UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/local_table_2', '{replica}') ORDER BY id SETTINGS index_granularity=2;"""
         )
 
         node1.query(
@@ -50,13 +50,10 @@ def started_cluster():
 
 
 def insert_data():
-    node1.query("INSERT INTO table_1 SELECT id,'123','test' FROM generateRandom('id Int16') LIMIT 60")
-    node1.query("INSERT INTO table_1 SELECT id,'234','test1' FROM generateRandom('id Int16') LIMIT 50")
-
-    node1.query("INSERT INTO table_2 SELECT id,'123',10 FROM generateRandom('id Int16') LIMIT 50")
-    node1.query("INSERT INTO table_2 SELECT id,'234',12 FROM generateRandom('id Int16') LIMIT 60")
-
+    node1.query("INSERT INTO table_1 SELECT number % 2, toString(number % 2), toString(number % 2) FROM numbers(10)")
     node1.query("SYSTEM FLUSH DISTRIBUTED table_1")
+
+    node1.query("INSERT INTO table_2 SELECT number % 4, toString(number % 4), number % 4 FROM numbers(10)")
     node1.query("SYSTEM FLUSH DISTRIBUTED table_2")
 
 
@@ -77,52 +74,52 @@ def exec_query_compare_result(query_text):
 
 def test_self_join(started_cluster):
     exec_query_compare_result(
-        "SELECT t1.name, t1.val FROM table_1 as t1 INNER JOIN table_1 as t2 ON t1.id = t2.id AND startsWith(t1.name, '123') ORDER BY t1.name")
+        "SELECT t1.name, t1.val FROM table_1 as t1 INNER JOIN table_1 as t2 ON t1.id = t2.id AND t1.name = '1' ORDER BY t1.name")
 
 
 def test_inner_join(started_cluster):
     exec_query_compare_result(
-        "SELECT name, text FROM table_1 INNER ANY JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '123') ORDER BY name, text")
+        "SELECT name, text FROM table_1 INNER ANY JOIN table_2 ON table_1.id = table_2.id AND table_2.text = '1' ORDER BY name, text")
 
     exec_query_compare_result(
-        "SELECT name, text FROM table_1 INNER ALL JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '123') ORDER BY name, text")
+        "SELECT name, text FROM table_1 INNER ALL JOIN table_2 ON table_1.id = table_2.id AND table_2.text = '1' ORDER BY name, text")
 
 
 def test_outer_join(started_cluster):
     exec_query_compare_result(
-        "SELECT name, text FROM table_1 RIGHT OUTER JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '234') ORDER BY name, text")
+        "SELECT name, text FROM table_1 RIGHT OUTER JOIN table_2 ON table_1.id = table_2.id AND table_2.text = '1' ORDER BY name, text")
 
     exec_query_compare_result(
-        "SELECT name, text FROM table_1 RIGHT ANY JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '234') ORDER BY name, text")
+        "SELECT name, text FROM table_1 RIGHT ANY JOIN table_2 ON table_1.id = table_2.id AND table_2.text = '1' ORDER BY name, text")
 
     exec_query_compare_result(
-        "SELECT name, text FROM table_1 RIGHT ALL JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '234') ORDER BY name, text")
+        "SELECT name, text FROM table_1 RIGHT ALL JOIN table_2 ON table_1.id = table_2.id AND table_2.text = '1' ORDER BY name, text")
 
     # ANY FULL JOINs are not implemented
     exec_query_compare_result(
-        "SELECT name, text FROM table_1 FULL OUTER JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '123') ORDER BY name, text")
+        "SELECT name, text FROM table_1 FULL OUTER JOIN table_2 ON table_1.id = table_2.id AND table_2.text = '1' ORDER BY name, text")
 
     exec_query_compare_result(
-        "SELECT name, text FROM table_1 LEFT ANY JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '123') ORDER BY name, text")
+        "SELECT name, text FROM table_1 LEFT ANY JOIN table_2 ON table_1.id = table_2.id AND table_2.text = '1' ORDER BY name, text")
 
     exec_query_compare_result(
-        "SELECT name, text FROM table_1 LEFT ALL JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '123') ORDER BY name, text")
+        "SELECT name, text FROM table_1 LEFT ALL JOIN table_2 ON table_1.id = table_2.id AND table_2.text = '1' ORDER BY name, text")
 
 
 def test_semi_and_anti(started_cluster):
     # SEMI|ANTI JOIN should be LEFT or RIGHT
     exec_query_compare_result(
-        "SELECT name, text FROM table_1 LEFT OUTER JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '123') ORDER BY name, text")
+        "SELECT name, text FROM table_1 LEFT OUTER JOIN table_2 ON table_1.id = table_2.id AND table_2.text = '1' ORDER BY name, text")
 
     exec_query_compare_result(
-        "SELECT name, text FROM table_1 LEFT SEMI JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '123') ORDER BY name, text")
+        "SELECT name, text FROM table_1 LEFT SEMI JOIN table_2 ON table_1.id = table_2.id AND table_2.text = '1' ORDER BY name, text")
 
     exec_query_compare_result(
-        "SELECT name, text FROM table_1 LEFT ANTI JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '123') ORDER BY name, text")
+        "SELECT name, text FROM table_1 LEFT ANTI JOIN table_2 ON table_1.id = table_2.id AND table_2.text = '1' ORDER BY name, text")
 
-    exec_query_compare_result("SELECT name, text FROM table_1 RIGHT SEMI JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '234') ORDER BY name, text")
+    exec_query_compare_result("SELECT name, text FROM table_1 RIGHT SEMI JOIN table_2 ON table_1.id = table_2.id AND table_2.text = '1' ORDER BY name, text")
 
-    exec_query_compare_result("SELECT name, text FROM table_1 RIGHT ANTI JOIN table_2 ON table_1.id = table_2.id AND startsWith(table_2.text, '234') ORDER BY name, text")
+    exec_query_compare_result("SELECT name, text FROM table_1 RIGHT ANTI JOIN table_2 ON table_1.id = table_2.id AND table_2.text = '1' ORDER BY name, text")
 
 
 def test_asof_join(started_cluster):
