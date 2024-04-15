@@ -307,77 +307,80 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
 
 QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify)
 {
-    CollectColumnSourceToColumnsVisitor collect_column_source_to_columns_visitor;
-    collect_column_source_to_columns_visitor.visit(query_tree_to_modify);
-
-    const auto & column_source_to_columns = collect_column_source_to_columns_visitor.getColumnSourceToColumns();
-
-    DistributedProductModeRewriteInJoinVisitor visitor(planner_context->getQueryContext());
-    visitor.visit(query_tree_to_modify);
-
-    auto replacement_map = visitor.getReplacementMap();
-    const auto & global_in_or_join_nodes = visitor.getGlobalInOrJoinNodes();
-
-    for (const auto & global_in_or_join_node : global_in_or_join_nodes)
+    if (!planner_context->getQueryContext()->isDistributedForQueryCoord())
     {
-        if (auto * join_node = global_in_or_join_node.query_node->as<JoinNode>())
+        CollectColumnSourceToColumnsVisitor collect_column_source_to_columns_visitor;
+        collect_column_source_to_columns_visitor.visit(query_tree_to_modify);
+
+        const auto & column_source_to_columns = collect_column_source_to_columns_visitor.getColumnSourceToColumns();
+
+        DistributedProductModeRewriteInJoinVisitor visitor(planner_context->getQueryContext());
+        visitor.visit(query_tree_to_modify);
+
+        auto replacement_map = visitor.getReplacementMap();
+        const auto & global_in_or_join_nodes = visitor.getGlobalInOrJoinNodes();
+
+        for (const auto & global_in_or_join_node : global_in_or_join_nodes)
         {
-            auto join_right_table_expression = join_node->getRightTableExpression();
-            auto join_right_table_expression_node_type = join_right_table_expression->getNodeType();
-
-            QueryTreeNodePtr subquery_node;
-
-            if (join_right_table_expression_node_type == QueryTreeNodeType::QUERY ||
-                join_right_table_expression_node_type == QueryTreeNodeType::UNION)
+            if (auto * join_node = global_in_or_join_node.query_node->as<JoinNode>())
             {
-                subquery_node = join_right_table_expression;
+                auto join_right_table_expression = join_node->getRightTableExpression();
+                auto join_right_table_expression_node_type = join_right_table_expression->getNodeType();
+
+                QueryTreeNodePtr subquery_node;
+
+                if (join_right_table_expression_node_type == QueryTreeNodeType::QUERY
+                    || join_right_table_expression_node_type == QueryTreeNodeType::UNION)
+                {
+                    subquery_node = join_right_table_expression;
+                }
+                else if (
+                    join_right_table_expression_node_type == QueryTreeNodeType::TABLE
+                    || join_right_table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION)
+                {
+                    const auto & columns = column_source_to_columns.at(join_right_table_expression).columns;
+                    subquery_node = buildSubqueryToReadColumnsFromTableExpression(
+                        columns, join_right_table_expression, planner_context->getQueryContext());
+                }
+                else
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Expected JOIN right table expression to be table, table function, query or union node. Actual {}",
+                        join_right_table_expression->formatASTForErrorMessage());
+                }
+
+                auto temporary_table_expression_node
+                    = executeSubqueryNode(subquery_node, planner_context->getMutableQueryContext(), global_in_or_join_node.subquery_depth);
+                temporary_table_expression_node->setAlias(join_right_table_expression->getAlias());
+
+                replacement_map.emplace(join_right_table_expression.get(), std::move(temporary_table_expression_node));
+                continue;
             }
-            else if (join_right_table_expression_node_type == QueryTreeNodeType::TABLE ||
-                join_right_table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION)
+            else if (auto * in_function_node = global_in_or_join_node.query_node->as<FunctionNode>())
             {
-                const auto & columns = column_source_to_columns.at(join_right_table_expression).columns;
-                subquery_node = buildSubqueryToReadColumnsFromTableExpression(columns,
-                    join_right_table_expression,
-                    planner_context->getQueryContext());
+                auto & in_function_subquery_node = in_function_node->getArguments().getNodes().at(1);
+                auto in_function_node_type = in_function_subquery_node->getNodeType();
+                if (in_function_node_type != QueryTreeNodeType::QUERY && in_function_node_type != QueryTreeNodeType::UNION)
+                    continue;
+
+                auto temporary_table_expression_node = executeSubqueryNode(
+                    in_function_subquery_node, planner_context->getMutableQueryContext(), global_in_or_join_node.subquery_depth);
+
+                in_function_subquery_node = std::move(temporary_table_expression_node);
             }
             else
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Expected JOIN right table expression to be table, table function, query or union node. Actual {}",
-                    join_right_table_expression->formatASTForErrorMessage());
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Expected global IN or JOIN query node. Actual {}",
+                    global_in_or_join_node.query_node->formatASTForErrorMessage());
             }
-
-            auto temporary_table_expression_node = executeSubqueryNode(subquery_node,
-                planner_context->getMutableQueryContext(),
-                global_in_or_join_node.subquery_depth);
-            temporary_table_expression_node->setAlias(join_right_table_expression->getAlias());
-
-            replacement_map.emplace(join_right_table_expression.get(), std::move(temporary_table_expression_node));
-            continue;
         }
-        else if (auto * in_function_node = global_in_or_join_node.query_node->as<FunctionNode>())
-        {
-            auto & in_function_subquery_node = in_function_node->getArguments().getNodes().at(1);
-            auto in_function_node_type = in_function_subquery_node->getNodeType();
-            if (in_function_node_type != QueryTreeNodeType::QUERY && in_function_node_type != QueryTreeNodeType::UNION)
-                continue;
 
-            auto temporary_table_expression_node = executeSubqueryNode(in_function_subquery_node,
-                planner_context->getMutableQueryContext(),
-                global_in_or_join_node.subquery_depth);
-
-            in_function_subquery_node = std::move(temporary_table_expression_node);
-        }
-        else
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Expected global IN or JOIN query node. Actual {}",
-                global_in_or_join_node.query_node->formatASTForErrorMessage());
-        }
+        if (!replacement_map.empty())
+            query_tree_to_modify = query_tree_to_modify->cloneAndReplace(replacement_map);
     }
-
-    if (!replacement_map.empty())
-        query_tree_to_modify = query_tree_to_modify->cloneAndReplace(replacement_map);
 
     removeGroupingFunctionSpecializations(query_tree_to_modify);
 

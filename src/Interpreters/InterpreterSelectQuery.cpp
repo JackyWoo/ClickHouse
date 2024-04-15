@@ -551,7 +551,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
-    joined_tables.rewriteDistributedInAndJoins(query_ptr);
+    if (!context->isDistributedForQueryCoord())
+        joined_tables.rewriteDistributedInAndJoins(query_ptr);
 
     max_streams = settings.max_threads;
     ASTSelectQuery & query = getSelectQuery();
