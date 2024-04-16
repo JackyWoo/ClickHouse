@@ -1975,7 +1975,7 @@ void TCPHandler::receiveFragments()
     receiveQuery();
 
     // read with_pending_data empty block
-//    readData();
+    // readData();
 
     FragmentsRequest fragments_request;
     fragments_request.query = state.query;

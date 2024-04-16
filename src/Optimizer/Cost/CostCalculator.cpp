@@ -1,4 +1,5 @@
 #include <Optimizer/Cost/CostCalculator.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 
 
 namespace DB

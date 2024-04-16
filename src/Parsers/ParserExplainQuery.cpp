@@ -22,7 +22,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_query_tree(Keyword::QUERY_TREE);
     ParserKeyword s_pipeline(Keyword::PIPELINE);
     ParserKeyword s_plan(Keyword::PLAN);
-    ParserKeyword s_fragment("FRAGMENT");
+    ParserKeyword s_fragment(Keyword::FRAGMENT);
     ParserKeyword s_estimates(Keyword::ESTIMATE);
     ParserKeyword s_table_override(Keyword::TABLE_OVERRIDE);
     ParserKeyword s_current_transaction(Keyword::CURRENT_TRANSACTION);

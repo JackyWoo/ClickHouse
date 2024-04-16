@@ -6,6 +6,7 @@
 #include <Optimizer/Statistics/JoinStatsCalculator.h>
 #include <Optimizer/Statistics/PredicateStatsCalculator.h>
 #include <Optimizer/Statistics/Utils.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 
 namespace DB
 {
@@ -83,8 +84,7 @@ Stats DeriveStatistics::visit(ReadFromMergeTree & step)
                 input->addColumnStatistics(column, ColumnStatistics::unknown());
     };
 
-    add_column_if_not_exist(step.getRealColumnNames());
-    add_column_if_not_exist(step.getVirtualColumnNames());
+    add_column_if_not_exist(step.getAllColumnNames());
 
     /// Firstly we set table total row count as table total row count, and
     /// when driving statistics for filter step the row count will reduce.

@@ -21,7 +21,7 @@ bool parseSettings(IParser::Pos & pos, Expected & expected, ASTPtr & settings)
         pos,
         [&]
         {
-            if (!ParserKeyword{"SETTINGS"}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::SETTINGS}.ignore(pos, expected))
                 return false;
 
             SettingsChanges settings_changes;
@@ -57,9 +57,9 @@ bool parseSettings(IParser::Pos & pos, Expected & expected, ASTPtr & settings)
 
 bool parseSyncOrAsync(IParser::Pos & pos, Expected & expected, bool & is_async)
 {
-    if (ParserKeyword{"ASYNC"}.ignore(pos, expected))
+    if (ParserKeyword{Keyword::ASYNC}.ignore(pos, expected))
         is_async = true;
-    else if (ParserKeyword{"SYNC"}.ignore(pos, expected))
+    else if (ParserKeyword{Keyword::SYNC}.ignore(pos, expected))
         is_async = false;
     else
         return false;
@@ -84,23 +84,23 @@ void addSyncOrAsyncToSettings(ASTPtr & settings, bool is_async)
 bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, String & cluster)
 {
     return IParserBase::wrapParseImpl(
-        pos, [&] { return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected); });
+        pos, [&] { return ParserKeyword{Keyword::ON}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected); });
 }
 }
 
 bool ParserAnalyzeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (!ParserKeyword("ANALYZE").ignore(pos, expected))
+    if (!ParserKeyword(Keyword::ANALYZE).ignore(pos, expected))
         return false;
 
     auto query = std::make_shared<ASTAnalyzeQuery>();
-    if (ParserKeyword("SAMPLE").ignore(pos, expected))
+    if (ParserKeyword(Keyword::SAMPLE).ignore(pos, expected))
         query->is_full = false;
     else
         query->is_full = true;
 
-    ParserKeyword("FULL").ignore(pos, expected);
-    ParserKeyword("TABLE").ignore(pos, expected);
+    ParserKeyword(Keyword::FULL).ignore(pos, expected);
+    ParserKeyword(Keyword::TABLE).ignore(pos, expected);
 
     /// Parse database and table
     if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))

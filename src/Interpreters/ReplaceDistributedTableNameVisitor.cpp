@@ -1,4 +1,5 @@
 #include <Interpreters/ReplaceDistributedTableNameVisitor.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionRemote.h>
 

@@ -103,7 +103,7 @@ PhysicalProperties DeriveOutputProp::visit(ReadFromMergeTree & step)
     const char * end = begin + sharding_key.size();
 
     ParserExpression expression_parser;
-    ASTPtr expression = parseQuery(expression_parser, begin, end, "expression", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    ASTPtr expression = parseQuery(expression_parser, begin, end, "expression", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     ExpressionActionsPtr sharding_key_expr
         = buildShardingKeyExpression(expression, context, step.getStorageMetadata()->columns.getAllPhysical(), false);
 

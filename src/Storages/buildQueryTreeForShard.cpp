@@ -363,27 +363,17 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
             {
                 auto & in_function_subquery_node = in_function_node->getArguments().getNodes().at(1);
                 auto in_function_node_type = in_function_subquery_node->getNodeType();
-                if (in_function_node_type != QueryTreeNodeType::QUERY && in_function_node_type != QueryTreeNodeType::UNION)
+                if (in_function_node_type != QueryTreeNodeType::QUERY && in_function_node_type != QueryTreeNodeType::UNION
+                    && in_function_node_type != QueryTreeNodeType::TABLE)
                     continue;
-            replacement_map.emplace(join_right_table_expression.get(), std::move(temporary_table_expression_node));
-            continue;
-        }
-        else if (auto * in_function_node = global_in_or_join_node.query_node->as<FunctionNode>())
-        {
-            auto & in_function_subquery_node = in_function_node->getArguments().getNodes().at(1);
-            auto in_function_node_type = in_function_subquery_node->getNodeType();
-            if (in_function_node_type != QueryTreeNodeType::QUERY && in_function_node_type != QueryTreeNodeType::UNION && in_function_node_type != QueryTreeNodeType::TABLE)
-                continue;
+
+                auto subquery_to_execute = in_function_subquery_node;
+                if (subquery_to_execute->as<TableNode>())
+                    subquery_to_execute
+                        = buildSubqueryToReadColumnsFromTableExpression(std::move(subquery_to_execute), planner_context->getQueryContext());
 
                 auto temporary_table_expression_node = executeSubqueryNode(
-                    in_function_subquery_node, planner_context->getMutableQueryContext(), global_in_or_join_node.subquery_depth);
-            auto subquery_to_execute = in_function_subquery_node;
-            if (subquery_to_execute->as<TableNode>())
-                subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(std::move(subquery_to_execute), planner_context->getQueryContext());
-
-            auto temporary_table_expression_node = executeSubqueryNode(subquery_to_execute,
-                planner_context->getMutableQueryContext(),
-                global_in_or_join_node.subquery_depth);
+                    subquery_to_execute, planner_context->getMutableQueryContext(), global_in_or_join_node.subquery_depth);
 
                 in_function_subquery_node = std::move(temporary_table_expression_node);
             }

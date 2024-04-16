@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QueryCoordination/Exchange/ExchangeDataSource.h>
+#include <QueryCoordination/Exchange/ExchangeDataRequest.h>
 
 namespace DB
 {

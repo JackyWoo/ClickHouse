@@ -94,6 +94,7 @@ public:
     const String & getDescription(bool with_extra = false) const override; /// NOLINT
     const String & getHost() const;
     UInt16 getPort() const;
+    const String getHostPort() const;
     const String & getDefaultDatabase() const;
 
     Protocol::Compression getCompression() const { return compression; }
@@ -199,7 +200,9 @@ private:
     String default_database;
     String user;
     String password;
-    ssh::SSHKey ssh_private_key;
+#if USE_SSH
+    SSHKey ssh_private_key;
+#endif
     String quota_key;
 
     /// For inter-server authorization
@@ -216,6 +219,7 @@ private:
 
     /// For messages in log and in exceptions.
     String description;
+    String full_description;
     void setDescription();
 
     /// Returns resolved address if it was resolved.
@@ -294,9 +298,10 @@ private:
 
     void connect(const ConnectionTimeouts & timeouts);
     void sendHello();
-    String packStringForSshSign(String challenge);
 
+#if USE_SSH
     void performHandshakeForSSHAuth();
+#endif
 
     void sendAddendum();
     void receiveHello(const Poco::Timespan & handshake_timeout);

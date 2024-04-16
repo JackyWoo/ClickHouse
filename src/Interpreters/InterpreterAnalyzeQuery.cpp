@@ -3,6 +3,7 @@
 #include <Interpreters/InterpreterAnalyzeQuery.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Optimizer/Statistics/IStatisticsStorage.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>

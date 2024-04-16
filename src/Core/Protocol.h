@@ -93,7 +93,9 @@ namespace Protocol
             MergeTreeReadTaskRequest = 16,  /// Request from a MergeTree replica to a coordinator
             TimezoneUpdate = 17,            /// Receive server's (session-wide) default timezone
             SSHChallenge = 18,              /// Return challenge for SSH signature signing
-            MAX = SSHChallenge,
+
+            PipelinesReady = 19,
+            MAX = PipelinesReady,
 
         };
 
@@ -123,6 +125,7 @@ namespace Protocol
                 "MergeTreeReadTaskRequest",
                 "TimezoneUpdate",
                 "SSHChallenge",
+                "PipelinesReady",
             };
             return packet <= MAX
                 ? data[packet]
@@ -185,7 +188,10 @@ namespace Protocol
                 "ReadTaskResponse",
                 "MergeTreeReadTaskResponse",
                 "SSHChallengeRequest",
-                "SSHChallengeResponse"
+                "SSHChallengeResponse",
+                "PlanFragments",
+                "BeginExecutePipelines",
+                "ExchangeData"
             };
             return packet <= MAX
                 ? data[packet]

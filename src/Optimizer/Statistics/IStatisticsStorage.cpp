@@ -7,6 +7,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Optimizer/Statistics/IStatisticsStorage.h>
 #include <Optimizer/Statistics/Utils.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -17,6 +18,7 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/IStorage.h>
 #include <Common/Stopwatch.h>
 #include <Common/quoteString.h>
 
@@ -71,7 +73,8 @@ void IStatisticsStorage::prepareTables(ContextPtr global_context)
             sql_storage.data() + sql_storage.size(),
             "Storage to create table for " + String(STATISTICS_DATABASE_NAME) + "." + TABLE_STATS_TABLE_NAME,
             0,
-            DBMS_DEFAULT_MAX_PARSER_DEPTH);
+            DBMS_DEFAULT_MAX_PARSER_DEPTH,
+            DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
         create->set(create->storage, ast_storage);
 

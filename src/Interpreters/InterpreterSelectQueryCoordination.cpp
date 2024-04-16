@@ -124,56 +124,78 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
             ApplyWithSubqueryVisitor().visit(cloned_query);
         }
 
+        /// Why downgraded to normal execution mode.
+        String reason;
+
         /// Temporarily disable query coordination for trivial count optimization.
         /// The judgment for optimize_trivial_count is not strict, but it is sufficient.
         /// TODO remove the code block when we send query plan instead of SQL to nodes.
         if (optimizeTrivialCount(query_ptr, context->getSettingsRef()))
         {
-            LOG_DEBUG(log, "Disable query coordination for trivial count optimization is enabled");
+            reason = "trivial count optimization is enabled";
             query_coordination_enabled = false;
-            context->setDistributedForQueryCoord(false);
-            return;
         }
-
-        ReplaceDistributedTableNameVisitor visitor(context);
-        visitor.visit(cloned_query);
-
-        if (visitor.has_table_function || visitor.has_local_table)
-            query_coordination_enabled = false;
-        /// TODO remove the code block when we send query plan instead of SQL to nodes.
-        else if (visitor.has_non_merge_tree_table)
-            query_coordination_enabled = false;
         else
         {
-            if (visitor.clusters.empty())
+            ReplaceDistributedTableNameVisitor visitor(context);
+            visitor.visit(cloned_query);
+
+            if (visitor.has_table_function || visitor.has_local_table)
+            {
+                reason = "query contains table function or local table";
                 query_coordination_enabled = false;
-            else if (visitor.clusters.size() > 1)
+            }
+            /// TODO remove the code block when we send query plan instead of SQL to nodes.
+            else if (visitor.has_non_merge_tree_table)
+            {
+                reason = "query contains non merge tree table";
                 query_coordination_enabled = false;
-            else if (visitor.clusters[0]->getName().empty()) /// remote() cluster_name is empty // TODO support
-                query_coordination_enabled = false;
+            }
             else
             {
-                query_coordination_enabled = true;
-                String cluster_name = visitor.clusters[0]->getName();
-                context->addQueryCoordinationMetaInfo(cluster_name, visitor.storages, visitor.sharding_keys);
+                if (visitor.clusters.empty())
+                {
+                    reason = "can not parse cluster information";
+                    query_coordination_enabled = false;
+                }
+                else if (visitor.clusters.size() > 1)
+                {
+                    reason = "get multi-clusters in query";
+                    query_coordination_enabled = false;
+                }
+                else if (visitor.clusters[0]->getName().empty()) /// remote() cluster_name is empty // TODO support
+                {
+                    reason = "remote table function";
+                    query_coordination_enabled = false;
+                }
+                else
+                {
+                    query_coordination_enabled = true;
+                    String cluster_name = visitor.clusters[0]->getName();
+                    context->addQueryCoordinationMetaInfo(cluster_name, visitor.storages, visitor.sharding_keys);
+                }
             }
+
+            if (query_coordination_enabled)
+                query_ptr = cloned_query;
+            else
+                /// restore changed settings
+                for (const auto & change : setting_changes)
+                    context->setSetting(change.name, change.value);
+
+            context->setDistributedForQueryCoord(query_coordination_enabled);
         }
 
-        if (query_coordination_enabled)
-            query_ptr = cloned_query;
-        else
-            /// restore changed settings
-            for (const auto & change : setting_changes)
-                context->setSetting(change.name, change.value);
-
-        context->setDistributedForQueryCoord(query_coordination_enabled);
+        if (!query_coordination_enabled)
+            LOG_DEBUG(log, "User enable query coordination, but it is downgraded to normal execution mode. The reason is {}", reason);
     }
     else
     {
+        /// For secondary or subquery, just taken from context
         query_coordination_enabled = context->isDistributedForQueryCoord();
     }
 
-    LOG_DEBUG(log, "Enabled query coordination {}", query_coordination_enabled);
+    LOG_DEBUG(log, "{} query coordination", query_coordination_enabled ? "Enable" : "Disable");
 }
 
 /// Disable use_index_for_in_with_subqueries

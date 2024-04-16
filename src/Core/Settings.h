@@ -910,7 +910,7 @@ class IColumn;
     M(Bool, iceberg_engine_ignore_schema_evolution, false, "Ignore schema evolution in Iceberg table engine and read all data using latest schema saved on table creation. Note that it can lead to incorrect result", 0) \
     \
     /** CBO Optimizer */ \
-    M(Bool, allow_experimental_query_coordination, false, "Allow experimental fragment", 0) \
+    M(Bool, allow_experimental_query_coordination, false, "Allow experimental query coordination which will execute in full MPP mode and support CBO optimizer.", 0) \
     M(Bool, optimize_query_coordination_sharding_key, true, "Optimize GROUP BY sharding_key queries for query coordination.", 0) \
     M(CBOStepExecutionMode, cbo_aggregating_mode, CBOStepExecutionMode::DETERMINED_BY_OPTIMIZER, "Aggregating step execution mode", 0) \
     M(CBOStepExecutionMode, cbo_topn_mode, CBOStepExecutionMode::DETERMINED_BY_OPTIMIZER, "TopN step execution mode, only used when CBO is enabled.", 0) \

@@ -4,6 +4,7 @@
 #include <QueryPipeline/ProfileInfo.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <Common/CurrentThread.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 
