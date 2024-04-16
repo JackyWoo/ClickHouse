@@ -56,10 +56,11 @@ namespace DB
 namespace EncodedUserInfo
 {
 
-/// Marker of the inter-server secret (passed in the user name)
+/// Marker for the inter-server secret (passed as the user name)
 /// (anyway user cannot be started with a whitespace)
 const char USER_INTERSERVER_MARKER[] = " INTERSERVER SECRET ";
-/// Marker of the SSH keys based authentication (passed in the user name)
+
+/// Marker for SSH-keys-based authentication (passed as the user name)
 const char SSH_KEY_AUTHENTICAION_MARKER[] = " SSH KEY AUTHENTICATION ";
 
 };
@@ -92,8 +93,8 @@ namespace Protocol
             MergeTreeReadTaskRequest = 16,  /// Request from a MergeTree replica to a coordinator
             TimezoneUpdate = 17,            /// Receive server's (session-wide) default timezone
             SSHChallenge = 18,              /// Return challenge for SSH signature signing
-            PipelinesReady = 19,            /// Return I am ready to execute for query coordination
-            MAX = PipelinesReady,
+            MAX = SSHChallenge,
+
         };
 
         /// NOTE: If the type of packet argument would be Enum, the comparison packet >= 0 && packet < 10
@@ -122,7 +123,6 @@ namespace Protocol
                 "MergeTreeReadTaskRequest",
                 "TimezoneUpdate",
                 "SSHChallenge",
-                "PipelinesReady",
             };
             return packet <= MAX
                 ? data[packet]
@@ -162,7 +162,7 @@ namespace Protocol
             MergeTreeReadTaskResponse = 10, /// Coordinator's decision with a modified set of mark ranges allowed to read
 
             SSHChallengeRequest = 11,       /// Request for SSH signature challenge
-            SSHChallengeResponse = 12,      /// Request for SSH signature challenge
+            SSHChallengeResponse = 12,      /// Reply to SSH signature challenge
 
             PlanFragments = 12,             /// Request for query plan fragments in query coordination
             BeginExecutePipelines = 13,     /// Request for beginning to execute in query coordination
@@ -185,10 +185,7 @@ namespace Protocol
                 "ReadTaskResponse",
                 "MergeTreeReadTaskResponse",
                 "SSHChallengeRequest",
-                "SSHChallengeResponse",
-                "PlanFragments",
-                "BeginExecutePipelines",
-                "ExchangeData"
+                "SSHChallengeResponse"
             };
             return packet <= MAX
                 ? data[packet]

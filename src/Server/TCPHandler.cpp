@@ -38,7 +38,6 @@
 #include <Core/ServerSettings.h>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <Compression/CompressionFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
@@ -569,7 +568,7 @@ void TCPHandler::runImpl()
             }
             else if (state.io.pipeline.pulling())
             {
-                processOrdinaryQueryWithProcessors();
+                processOrdinaryQuery();
                 finish_or_cancel();
             }
             else if (state.io.pipeline.completed())
@@ -955,7 +954,7 @@ void TCPHandler::processInsertQuery()
     Block processed_block;
     const auto & settings = query_context->getSettingsRef();
 
-    auto * insert_queue = query_context->getAsynchronousInsertQueue();
+    auto * insert_queue = query_context->tryGetAsynchronousInsertQueue();
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*state.parsed_query);
 
     bool async_insert_enabled = settings.async_insert;
@@ -965,9 +964,26 @@ void TCPHandler::processInsertQuery()
 
     if (insert_queue && async_insert_enabled && !insert_query.select)
     {
+        /// Let's agree on terminology and say that a mini-INSERT is an asynchronous INSERT
+        /// which typically contains not a lot of data inside and a big-INSERT in an INSERT
+        /// which was formed by concatenating several mini-INSERTs together.
+        /// In case when the client had to retry some mini-INSERTs then they will be properly deduplicated
+        /// by the source tables. This functionality is controlled by a setting `async_insert_deduplicate`.
+        /// But then they will be glued together into a block and pushed through a chain of Materialized Views if any.
+        /// The process of forming such blocks is not deteministic so each time we retry mini-INSERTs the resulting
+        /// block may be concatenated differently.
+        /// That's why deduplication in dependent Materialized Views doesn't make sense in presence of async INSERTs.
+        if (settings.throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert &&
+            settings.deduplicate_blocks_in_dependent_materialized_views)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Deduplication is dependent materialized view cannot work together with async inserts. "\
+                    "Please disable eiher `deduplicate_blocks_in_dependent_materialized_views` or `async_insert` setting.");
+
         auto result = processAsyncInsertQuery(*insert_queue);
         if (result.status == AsynchronousInsertQueue::PushResult::OK)
         {
+            /// Reset pipeline because it may hold write lock for some storages.
+            state.io.pipeline.reset();
             if (settings.wait_for_async_insert)
             {
                 size_t timeout_ms = settings.wait_for_async_insert_timeout.totalMilliseconds();
@@ -1000,7 +1016,7 @@ void TCPHandler::processInsertQuery()
     else
     {
         PushingPipelineExecutor executor(state.io.pipeline);
-        run_executor(executor, processed_block);
+        run_executor(executor, std::move(processed_block));
     }
 
     sendInsertProfileEvents();
@@ -1155,7 +1171,7 @@ void TCPHandler::processOrdinaryQueryWithCoordination(std::function<void()> fini
 }
 
 
-void TCPHandler::processOrdinaryQueryWithProcessors()
+void TCPHandler::processOrdinaryQuery()
 {
     auto & pipeline = state.io.pipeline;
 
@@ -1288,6 +1304,7 @@ void TCPHandler::processTablesStatusRequest()
         {
             status.is_replicated = true;
             status.absolute_delay = static_cast<UInt32>(replicated_table->getAbsoluteDelay());
+            status.is_readonly = replicated_table->isTableReadOnly();
         }
         else
             status.is_replicated = false;
@@ -1534,17 +1551,6 @@ std::string formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(const Poco::Ut
     return result;
 }
 
-[[ maybe_unused ]] String createChallenge()
-{
-#if USE_SSL
-    pcg64_fast rng(randomSeed());
-    UInt64 rand = rng();
-    return encodeSHA256(&rand, sizeof(rand));
-#else
-    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Can't generate challenge, because ClickHouse was built without OpenSSL");
-#endif
-}
-
 }
 
 std::unique_ptr<Session> TCPHandler::makeSession()
@@ -1560,16 +1566,6 @@ std::unique_ptr<Session> TCPHandler::makeSession()
     res->setClientInterface(interface);
 
     return res;
-}
-
-String TCPHandler::prepareStringForSshValidation(String username, String challenge)
-{
-    String output;
-    output.append(std::to_string(client_tcp_protocol_version));
-    output.append(default_database);
-    output.append(username);
-    output.append(challenge);
-    return output;
 }
 
 void TCPHandler::receiveHello()
@@ -1629,11 +1625,9 @@ void TCPHandler::receiveHello()
         return;
     }
 
-    is_ssh_based_auth = startsWith(user, EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) && password.empty();
+    is_ssh_based_auth = user.starts_with(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) && password.empty();
     if (is_ssh_based_auth)
-    {
-        user.erase(0, String(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER).size());
-    }
+        user.erase(0, std::string_view(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER).size());
 
     session = makeSession();
     const auto & client_info = session->getClientInfo();
@@ -1661,7 +1655,9 @@ void TCPHandler::receiveHello()
             }
         }
     }
+#endif
 
+#if USE_SSH
     /// Perform handshake for SSH authentication
     if (is_ssh_based_auth)
     {
@@ -1675,7 +1671,14 @@ void TCPHandler::receiveHello()
         if (packet_type != Protocol::Client::SSHChallengeRequest)
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet for requesting a challenge string");
 
-        auto challenge = createChallenge();
+        auto create_challenge = []()
+        {
+            pcg64_fast rng(randomSeed());
+            UInt64 rand = rng();
+            return encodeSHA256(&rand, sizeof(rand));
+        };
+
+        String challenge = create_challenge();
         writeVarUInt(Protocol::Server::SSHChallenge, *out);
         writeStringBinary(challenge, *out);
         out->next();
@@ -1686,7 +1689,17 @@ void TCPHandler::receiveHello()
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet with a response for a challenge");
         readStringBinary(signature, *in);
 
-        auto cred = SshCredentials(user, signature, prepareStringForSshValidation(user, challenge));
+        auto prepare_string_for_ssh_validation = [&](const String & username, const String & challenge_)
+        {
+            String output;
+            output.append(std::to_string(client_tcp_protocol_version));
+            output.append(default_database);
+            output.append(username);
+            output.append(challenge_);
+            return output;
+        };
+
+        auto cred = SshCredentials(user, signature, prepare_string_for_ssh_validation(user, challenge));
         session->authenticate(cred, getClientAddress(client_info));
         return;
     }
@@ -2457,7 +2470,7 @@ void TCPHandler::sendData(const Block & block)
         /// For testing hedged requests
         if (unknown_packet_in_send_data)
         {
-            constexpr UInt64 marker = (1ULL<<63) - 1;
+            constexpr UInt64 marker = (1ULL << 63) - 1;
             --unknown_packet_in_send_data;
             if (unknown_packet_in_send_data == 0)
                 writeVarUInt(marker, *out);

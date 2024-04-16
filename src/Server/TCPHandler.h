@@ -3,31 +3,32 @@
 #include <optional>
 #include <Poco/Net/TCPServerConnection.h>
 
-#include <Core/Protocol.h>
-#include <Core/QueryProcessingStage.h>
-#include <Formats/NativeReader.h>
-#include <Formats/NativeWriter.h>
-#include <IO/Progress.h>
-#include <IO/TimeoutSetter.h>
-#include <Interpreters/ClientInfo.h>
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/InternalTextLogsQueue.h>
-#include <Interpreters/ProfileEventsExt.h>
-#include <QueryCoordination/Fragments/FragmentRequest.h>
-#include <QueryCoordination/Pipelines/CompletedPipelinesExecutor.h>
-#include <QueryPipeline/BlockIO.h>
 #include <base/getFQDNOrHostName.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadStatus.h>
-#include "QueryCoordination/Exchange/ExchangeDataRequest.h"
+#include <Core/Protocol.h>
+#include <Core/QueryProcessingStage.h>
+#include <IO/Progress.h>
+#include <IO/TimeoutSetter.h>
+#include <QueryPipeline/BlockIO.h>
+#include <Interpreters/InternalTextLogsQueue.h>
+#include <Interpreters/Context_fwd.h>
+#include <Interpreters/ClientInfo.h>
+#include <Interpreters/ProfileEventsExt.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
 
 #include "IServer.h"
 #include "Interpreters/AsynchronousInsertQueue.h"
 #include "Server/TCPProtocolStackData.h"
 #include "Storages/MergeTree/RequestResponse.h"
 #include "base/types.h"
+
+#include <QueryCoordination/Fragments/FragmentRequest.h>
+#include <QueryCoordination/Pipelines/CompletedPipelinesExecutor.h>
+#include <QueryCoordination/Exchange/ExchangeDataRequest.h>
 
 
 namespace CurrentMetrics
@@ -125,9 +126,7 @@ struct QueryState
 
     /// for query coordination
     std::optional<FragmentsRequest> fragments_request;
-
     std::optional<ExchangeDataRequest> exchange_data_request;
-
     std::shared_ptr<ExchangeDataSource> exchange_data_receiver;
 
     /// sample block from ExchangeData
@@ -230,7 +229,7 @@ private:
 
     String default_database;
 
-    bool is_ssh_based_auth = false;
+    bool is_ssh_based_auth = false; /// authentication is via SSH pub-key challenge
     /// For inter-server secret (remote_server.*.secret)
     bool is_interserver_mode = false;
     bool is_interserver_authenticated = false;
@@ -262,7 +261,6 @@ private:
     void extractConnectionSettingsFromContext(const ContextPtr & context);
 
     std::unique_ptr<Session> makeSession();
-    String prepareStringForSshValidation(String user, String challenge);
 
     bool receiveProxyHeader();
     void receiveHello();

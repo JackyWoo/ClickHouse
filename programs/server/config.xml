@@ -96,7 +96,7 @@
             <to>https://{bucket}.s3.amazonaws.com</to>
         </s3>
         <gs>
-            <to>https://{bucket}.storage.googleapis.com</to>
+            <to>https://storage.googleapis.com/{bucket}</to>
         </gs>
         <oss>
             <to>https://{bucket}.oss.aliyuncs.com</to>
@@ -135,7 +135,7 @@
     <http_port>8123</http_port>
 
     <!-- Port for interaction by native protocol with:
-         - clickhouse-client and other native ClickHouse tools (clickhouse-benchmark, clickhouse-copier);
+         - clickhouse-client and other native ClickHouse tools (clickhouse-benchmark);
          - clickhouse-server with other clickhouse-servers for distributed query processing;
          - ClickHouse drivers and applications supporting native protocol
          (this protocol is also informally called as "the TCP protocol");
@@ -1578,6 +1578,42 @@
         </tables>
     </rocksdb>
     -->
+
+    <!-- <kafka> -->
+        <!-- Global configuration properties -->
+        <!--
+        NOTE: statistics should be consumed, otherwise it creates too much
+              entries in the queue, that leads to memory leak and slow shutdown.
+        default value: 0
+        <statistics_interval_ms>3000</statistics_interval_ms>
+        -->
+
+        <!-- Topic configuration properties -->
+        <!--
+        <kafka_topic>
+              <name>football</name>
+              <request_timeout_ms>6000</request_timeout_ms>
+        </kafka_topic>
+        -->
+
+        <!-- Producer configuration -->
+        <!--
+        <producer>
+            <compression_codec>gzip</compression_codec>
+            <kafka_topic>
+                <name>football</name>
+                <request_timeout_ms>6000</request_timeout_ms>
+            </kafka_topic>
+        </producer>
+        -->
+
+        <!-- Consumer configuration -->
+        <!--
+        <consumer>
+            <enable_auto_commit>true</enable_auto_commit>
+        </consumer>
+        -->
+    <!-- </kafka> -->
 
     <!-- Configuration for the query cache -->
     <query_cache>
