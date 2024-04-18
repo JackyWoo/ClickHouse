@@ -24,10 +24,11 @@ ActionNodeStatistics PredicateNodeVisitor::visitOtherFuncs(const ActionsDAG::Nod
     node_stats.selectivity = 0.5; /// TODO add to settings
 
     /// collect input node statistics
-    for (auto input_node : input_nodes)
+    for (const auto * input_node : input_nodes)
     {
         auto cloned = context[input_node].get(input_node)->clone();
         cloned->setDataType(node->result_type);
+        node_stats.set(input_node, cloned);
     }
     return node_stats;
 }
@@ -36,7 +37,7 @@ Stats PredicateStatsCalculator::calculateStatistics(const ActionsDAGPtr & predic
 {
     Stats statistics;
 
-    auto & input_nodes = predicates->getInputs();
+    const auto & input_nodes = predicates->getInputs();
     PredicateNodeVisitor::VisitContext context;
 
     /// 1. init context
