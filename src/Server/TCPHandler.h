@@ -272,6 +272,7 @@ private:
     String receiveReadTaskResponseAssumeLocked();
     std::optional<ParallelReadResponse> receivePartitionMergeTreeReadTaskResponseAssumeLocked();
     bool receiveData(bool scalar);
+    bool receiveExchangeData();
     bool readDataNext();
     void readData();
     void skipData();

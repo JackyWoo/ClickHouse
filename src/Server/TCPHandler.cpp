@@ -1090,7 +1090,7 @@ void TCPHandler::processOrdinaryQueryWithCoordination(std::function<void()> fini
 
         {
             std::shared_ptr<QueryCoordinationExecutor> executor
-                = state.io.query_coord_state.pipelines.createCoordinationExecutor(pipeline, state.io.query_coord_state.storage_limits);
+                = state.io.query_coord_state.pipelines.createCoordinationExecutor(pipeline, state.io.query_coord_state.storage_limits, interactive_delay / 1000);
 
             auto remote_pipelines_manager = executor->getRemotePipelinesManager();
             remote_pipelines_manager->setManagedNode(state.io.query_coord_state.remote_host_connection);
@@ -1818,53 +1818,7 @@ bool TCPHandler::receivePacket()
             throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet BeginExecutePipelines received from client");
 
         case Protocol::Client::ExchangeData:
-        {
-            state.is_empty = false;
-
-            ExchangeDataRequest exchange_data_request;
-            exchange_data_request.read(*in);
-            state.exchange_data_request.emplace(exchange_data_request);
-
-            LOG_DEBUG(log, "Read exchange data request {}", state.exchange_data_request->toString());
-
-            /// TODO ThreadGroup
-//            std::optional<CurrentThread::QueryScope> query_scope;
-//
-//            auto context = FragmentMgr::getInstance().findQueryContext(state.exchange_data_request->query_id);
-//
-//            query_scope.emplace(context, /* fatal_error_callback */ [this]
-//            {
-//                std::lock_guard lock(fatal_error_mutex);
-//                sendLogs();
-//            });
-
-            UInt64 compression = 0;
-            readVarUInt(compression, *in);
-            state.compression = static_cast<Protocol::Compression>(compression);
-            last_block_in.compression = state.compression;
-
-            LOG_DEBUG(log, "Read compression");
-
-            state.exchange_data_receiver = ExchangeManager::getInstance().findExchangeDataSource(*state.exchange_data_request);
-            state.exchange_data_header = state.exchange_data_receiver->getHeader();
-
-            LOG_DEBUG(log, "Found exchange data receiver");
-
-            /// read exchange data
-            try
-            {
-                readData();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Error while read exchange data");
-                state.exchange_data_receiver->receive(std::current_exception());
-            }
-
-            LOG_DEBUG(log, "Read exchange data done");
-
-            return false;
-        }
+            return receiveExchangeData();
 
         case Protocol::Client::Data:
         case Protocol::Client::Scalar:
@@ -2206,6 +2160,55 @@ void TCPHandler::receiveUnexpectedQuery()
         skip_settings.read(*in, settings_format);
 
     throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Query received from client");
+}
+
+bool TCPHandler::receiveExchangeData()
+{
+    state.is_empty = false;
+
+    ExchangeDataRequest exchange_data_request;
+    exchange_data_request.read(*in);
+    state.exchange_data_request.emplace(exchange_data_request);
+
+    LOG_DEBUG(log, "Read exchange data request {}", state.exchange_data_request->toString());
+
+    /// TODO ThreadGroup
+    //            std::optional<CurrentThread::QueryScope> query_scope;
+    //
+    //            auto context = FragmentMgr::getInstance().findQueryContext(state.exchange_data_request->query_id);
+    //
+    //            query_scope.emplace(context, /* fatal_error_callback */ [this]
+    //            {
+    //                std::lock_guard lock(fatal_error_mutex);
+    //                sendLogs();
+    //            });
+
+    UInt64 compression = 0;
+    readVarUInt(compression, *in);
+    state.compression = static_cast<Protocol::Compression>(compression);
+    last_block_in.compression = state.compression;
+
+    LOG_DEBUG(log, "Read compression");
+
+    state.exchange_data_receiver = ExchangeManager::getInstance().findExchangeDataSource(*state.exchange_data_request);
+    state.exchange_data_header = state.exchange_data_receiver->getHeader();
+
+    LOG_DEBUG(log, "Found exchange data receiver");
+
+    /// read exchange data
+    try
+    {
+        readData();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Error while read exchange data");
+        state.exchange_data_receiver->receive(std::current_exception());
+    }
+
+    LOG_DEBUG(log, "Read exchange data done");
+
+    return false;
 }
 
 bool TCPHandler::receiveData(bool scalar)

@@ -2,6 +2,7 @@
 #include <functional>
 #include <memory>
 #include <Common/logger_useful.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 
 /// Includes 3 parts of logic
 /// main PullingAsyncPipelineExecutor::pull
@@ -17,7 +18,6 @@ class Chunk;
 class LazyOutputFormat;
 struct ProfileInfo;
 class RemotePipelinesManager;
-class CompletedPipelinesExecutor;
 class PullingAsyncPipelineExecutor;
 
 using setExceptionCallback = std::function<void(std::exception_ptr exception_)>;
@@ -26,10 +26,18 @@ using setExceptionCallback = std::function<void(std::exception_ptr exception_)>;
 class QueryCoordinationExecutor
 {
 public:
-    explicit QueryCoordinationExecutor(
-        std::shared_ptr<PullingAsyncPipelineExecutor> pulling_async_pipeline_executor_,
-        std::shared_ptr<CompletedPipelinesExecutor> completed_pipelines_executor_,
+    /// For tcp handler
+    QueryCoordinationExecutor(
+        std::shared_ptr<PullingAsyncPipelineExecutor> pulling_root_executor_,
+        std::shared_ptr<CompletedPipelinesExecutor> sources_pipelines_executor_,
         std::shared_ptr<RemotePipelinesManager> remote_pipelines_manager_);
+
+    /// For http handler
+    QueryCoordinationExecutor(
+        std::shared_ptr<CompletedPipelineExecutor> completed_root_executor_,
+        std::shared_ptr<CompletedPipelinesExecutor> sources_pipelines_executor_,
+        std::shared_ptr<RemotePipelinesManager> remote_pipelines_manager_,
+        size_t interactive_timeout_ms_);
 
     ~QueryCoordinationExecutor();
 
@@ -40,6 +48,11 @@ public:
     /// If milliseconds > 0, returns empty object and `true` after timeout exceeded. Otherwise method is blocking.
     /// You can use any pull method.
     bool pull(Block & block, uint64_t milliseconds = 0);
+
+    /// Methods return false if query is finished.
+    /// If milliseconds > 0, returns empty object and `true` after timeout exceeded. Otherwise method is blocking.
+    /// You can use any pull method.
+    void execute();
 
     /// Stop execution of all processors. It is not necessary, but helps to stop execution before executor is destroyed.
     void cancel();
@@ -58,8 +71,6 @@ public:
     /// Get query profile info.
     ProfileInfo & getProfileInfo();
 
-    std::shared_ptr<CompletedPipelinesExecutor> getCompletedPipelinesExecutor() { return completed_pipelines_executor; }
-
     std::shared_ptr<RemotePipelinesManager> getRemotePipelinesManager() { return remote_pipelines_manager; }
 
     /// Internal executor data.
@@ -69,19 +80,17 @@ private:
     using CancelFunc = std::function<void()>;
 
     void cancelWithExceptionHandling(CancelFunc && cancel_func);
-
     void setException(std::exception_ptr exception_);
-
     void rethrowExceptionIfHas();
 
-private:
     Poco::Logger * log;
 
     /// root pipeline
-    std::shared_ptr<PullingAsyncPipelineExecutor> pulling_async_pipeline_executor;
+    std::shared_ptr<PullingAsyncPipelineExecutor> pulling_root_executor;
+    std::shared_ptr<CompletedPipelineExecutor> completed_root_executor;
 
     /// other pipelines executor
-    std::shared_ptr<CompletedPipelinesExecutor> completed_pipelines_executor;
+    std::shared_ptr<CompletedPipelinesExecutor> sources_pipelines_executor;
 
     /// remote pipelines manager
     std::shared_ptr<RemotePipelinesManager> remote_pipelines_manager;
@@ -91,7 +100,8 @@ private:
     std::exception_ptr exception;
     bool has_exception = false;
 
-    bool begin_execute = false;
+    std::atomic_bool has_begun = false;
+    std::atomic_bool is_canceled = false;
 };
 
 }

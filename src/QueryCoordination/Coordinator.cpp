@@ -269,7 +269,7 @@ void Coordinator::sendFragmentsToPreparePipelines()
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
 
     /// send
-    for (auto [host, fragments_for_send] : host_fragments)
+    for (const auto& [host, fragments_for_send] : host_fragments)
     {
         FragmentsRequest fragments_request;
         for (const auto & fragment : fragments_for_send)
@@ -322,7 +322,7 @@ void Coordinator::sendFragmentsToPreparePipelines()
 
 void Coordinator::sendBeginExecutePipelines()
 {
-    for (auto [host, _] : host_fragments)
+    for (const auto& [host, _] : host_fragments)
         if (host != local_host)
             host_connection[host]->sendBeginExecutePipelines(context->getCurrentQueryId());
 }
@@ -330,7 +330,7 @@ void Coordinator::sendBeginExecutePipelines()
 std::unordered_map<String, IConnectionPool::Entry> Coordinator::getRemoteHostConnection()
 {
     std::unordered_map<String, IConnectionPool::Entry> res;
-    for (auto [host, _] : host_fragments)
+    for (const auto& [host, _] : host_fragments)
         if (host != local_host)
             res.emplace(host, host_connection[host]);
     return res;

@@ -81,7 +81,7 @@ void RemotePipelinesManager::processPacket(Packet & packet, ManagedNode & node)
 void RemotePipelinesManager::receiveReporter(ThreadGroupPtr thread_group)
 {
     SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
-    setThreadName("receReporter");
+    setThreadName("rcvReporter");
 
     try
     {
@@ -126,7 +126,6 @@ bool RemotePipelinesManager::allFinished()
 void RemotePipelinesManager::asyncReceiveReporter()
 {
     auto func = [this, thread_group = CurrentThread::getGroup()]() { receiveReporter(thread_group); };
-
     receive_reporter_thread = ThreadFromGlobalPool(std::move(func));
 }
 

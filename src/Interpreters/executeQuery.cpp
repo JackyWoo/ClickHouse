@@ -66,6 +66,8 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
 #include <QueryCoordination/Exchange/ExchangeManager.h>
+#include <QueryCoordination/QueryCoordinationExecutor.h>
+#include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
 
 #include <IO/CompressionMethod.h>
 
@@ -1599,8 +1601,22 @@ void executeQuery(
 
         if (pipeline.initialized())
         {
-            CompletedPipelineExecutor executor(pipeline);
-            executor.execute();
+            if (context->isDistributedForQueryCoord())
+            {
+                auto executor = streams.query_coord_state.pipelines.createCoordinationExecutor(
+                    pipeline, streams.query_coord_state.storage_limits, context->getSettingsRef().interactive_delay / 1000);
+
+                auto remote_pipelines_manager = executor->getRemotePipelinesManager();
+                remote_pipelines_manager->setManagedNode(streams.query_coord_state.remote_host_connection);
+//                remote_pipelines_manager->setProgressCallback(
+//                    [this](const Progress & value) { return this->updateProgress(value); }, context->getProcessListElement());
+                executor->execute();
+            }
+            else
+            {
+                CompletedPipelineExecutor executor(pipeline);
+                executor.execute();
+            }
         }
         else
         {

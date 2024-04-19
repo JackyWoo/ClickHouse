@@ -1,4 +1,5 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <QueryCoordination/Pipelines/CompletedPipelinesExecutor.h>
 #include <QueryCoordination/Pipelines/Pipelines.h>
 #include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
@@ -48,11 +49,9 @@ void Pipelines::assignThreadNum(size_t max_threads_)
 }
 
 std::shared_ptr<QueryCoordinationExecutor>
-Pipelines::createCoordinationExecutor(QueryPipeline & pipeline, const StorageLimitsList & storage_limits_)
+Pipelines::createCoordinationExecutor(QueryPipeline & pipeline, const StorageLimitsList & storage_limits_, size_t interactive_timeout_ms)
 {
-    //    LOG_DEBUG(log, "Create pipelines executor for query {}", query_id);
-
-    std::shared_ptr<CompletedPipelinesExecutor> completed_pipelines_executor;
+    std::shared_ptr<CompletedPipelinesExecutor> sources_pipelines_executor;
     if (!sources_pipelines.empty())
     {
         std::vector<Int32> fragment_ids;
@@ -63,15 +62,20 @@ Pipelines::createCoordinationExecutor(QueryPipeline & pipeline, const StorageLim
             fragment_ids.emplace_back(query_pipeline.fragment_id);
         }
 
-        completed_pipelines_executor = std::make_shared<CompletedPipelinesExecutor>(pipelines, fragment_ids);
+        sources_pipelines_executor = std::make_shared<CompletedPipelinesExecutor>(pipelines, fragment_ids);
     }
-
-    std::shared_ptr<PullingAsyncPipelineExecutor> pulling_executor = std::make_shared<PullingAsyncPipelineExecutor>(pipeline);
 
     auto remote_pipelines_manager = std::make_shared<RemotePipelinesManager>(storage_limits_);
     /// TODO set nodes
 
-    return std::make_shared<QueryCoordinationExecutor>(pulling_executor, completed_pipelines_executor, remote_pipelines_manager);
+    if (pipeline.pulling())
+        return std::make_shared<QueryCoordinationExecutor>(
+            std::make_shared<PullingAsyncPipelineExecutor>(pipeline), sources_pipelines_executor, remote_pipelines_manager);
+    else if (pipeline.completed())
+        return std::make_shared<QueryCoordinationExecutor>(
+            std::make_shared<CompletedPipelineExecutor>(pipeline), sources_pipelines_executor, remote_pipelines_manager, interactive_timeout_ms);
+    
+    UNREACHABLE();
 }
 
 std::shared_ptr<CompletedPipelinesExecutor> Pipelines::createCompletedPipelinesExecutor()

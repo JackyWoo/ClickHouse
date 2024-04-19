@@ -34,14 +34,30 @@ struct QueryCoordinationExecutor::Data
 };
 
 QueryCoordinationExecutor::QueryCoordinationExecutor(
-    std::shared_ptr<PullingAsyncPipelineExecutor> pulling_async_pipeline_executor_,
-    std::shared_ptr<CompletedPipelinesExecutor> completed_pipelines_executor_,
+    std::shared_ptr<PullingAsyncPipelineExecutor> pulling_root_executor_,
+    std::shared_ptr<CompletedPipelinesExecutor> sources_pipelines_executor_,
     std::shared_ptr<RemotePipelinesManager> remote_pipelines_manager_)
     : log(&Poco::Logger::get("QueryCoordinationExecutor"))
-    , pulling_async_pipeline_executor(pulling_async_pipeline_executor_)
-    , completed_pipelines_executor(completed_pipelines_executor_)
+    , pulling_root_executor(pulling_root_executor_)
+    , sources_pipelines_executor(sources_pipelines_executor_)
     , remote_pipelines_manager(remote_pipelines_manager_)
 {
+}
+
+QueryCoordinationExecutor::QueryCoordinationExecutor(
+    std::shared_ptr<CompletedPipelineExecutor> completed_root_executor_,
+    std::shared_ptr<CompletedPipelinesExecutor> sources_pipelines_executor_,
+    std::shared_ptr<RemotePipelinesManager> remote_pipelines_manager_,
+    size_t interactive_timeout_ms_)
+    : log(&Poco::Logger::get("QueryCoordinationExecutor"))
+    , completed_root_executor(completed_root_executor_)
+    , sources_pipelines_executor(sources_pipelines_executor_)
+    , remote_pipelines_manager(remote_pipelines_manager_)
+{
+
+    auto cancel_callback = [this]() { return is_canceled.load(); };
+    if (completed_root_executor)
+        completed_root_executor->setCancelCallback(cancel_callback, interactive_timeout_ms_);
 }
 
 QueryCoordinationExecutor::~QueryCoordinationExecutor()
@@ -58,20 +74,21 @@ QueryCoordinationExecutor::~QueryCoordinationExecutor()
 
 const Block & QueryCoordinationExecutor::getHeader() const
 {
-    return pulling_async_pipeline_executor->getHeader();
+    chassert(pulling_root_executor != nullptr);
+    return pulling_root_executor->getHeader();
 }
 
 
 bool QueryCoordinationExecutor::pull(Block & block, uint64_t milliseconds)
 {
-    if (!begin_execute)
+    if (!has_begun)
     {
         auto exception_callback = [this](std::exception_ptr exception_) { setException(exception_); };
 
-        if (completed_pipelines_executor)
+        if (sources_pipelines_executor)
         {
-            completed_pipelines_executor->setExceptionCallback(exception_callback);
-            completed_pipelines_executor->asyncExecute();
+            sources_pipelines_executor->setExceptionCallback(exception_callback);
+            sources_pipelines_executor->asyncExecute();
         }
 
         if (remote_pipelines_manager)
@@ -79,23 +96,44 @@ bool QueryCoordinationExecutor::pull(Block & block, uint64_t milliseconds)
             remote_pipelines_manager->setExceptionCallback(exception_callback);
             remote_pipelines_manager->asyncReceiveReporter();
         }
-        begin_execute = true;
+        has_begun = true;
     }
 
     rethrowExceptionIfHas();
 
-    bool is_execution_finished = !pulling_async_pipeline_executor->pull(block, milliseconds);
+    bool is_execution_finished = !pulling_root_executor->pull(block, milliseconds);
 
     if (is_execution_finished)
     {
-        if (completed_pipelines_executor)
-            completed_pipelines_executor->waitFinish();
+        if (sources_pipelines_executor)
+            sources_pipelines_executor->waitFinish();
 
         if (remote_pipelines_manager)
             remote_pipelines_manager->waitFinish();
     }
 
     return !is_execution_finished;
+}
+
+void QueryCoordinationExecutor::execute()
+{
+    has_begun = true;
+    auto exception_callback = [this](std::exception_ptr exception_) { setException(exception_); };
+
+    if (sources_pipelines_executor)
+    {
+        sources_pipelines_executor->setExceptionCallback(exception_callback);
+        sources_pipelines_executor->asyncExecute();
+    }
+
+    if (remote_pipelines_manager)
+    {
+        remote_pipelines_manager->setExceptionCallback(exception_callback);
+        remote_pipelines_manager->asyncReceiveReporter();
+    }
+
+    rethrowExceptionIfHas();
+    completed_root_executor->execute();
 }
 
 void QueryCoordinationExecutor::cancel()
@@ -106,15 +144,22 @@ void QueryCoordinationExecutor::cancel()
     cancelWithExceptionHandling(
         [&]()
         {
-            if (pulling_async_pipeline_executor)
-                pulling_async_pipeline_executor->cancel();
+            if (pulling_root_executor)
+                pulling_root_executor->cancel();
+        });
+
+    /// send cancel signal to completed_root_executor
+    cancelWithExceptionHandling(
+        [&]()
+        {
+            is_canceled = true;
         });
 
     cancelWithExceptionHandling(
         [&]()
         {
-            if (completed_pipelines_executor)
-                completed_pipelines_executor->cancel();
+            if (sources_pipelines_executor)
+                sources_pipelines_executor->cancel();
         });
 
     cancelWithExceptionHandling(
@@ -159,27 +204,32 @@ void QueryCoordinationExecutor::cancelWithExceptionHandling(CancelFunc && cancel
 
 Chunk QueryCoordinationExecutor::getTotals()
 {
-    return pulling_async_pipeline_executor->getTotals();
+    chassert(pulling_root_executor != nullptr);
+    return pulling_root_executor->getTotals();
 }
 
 Chunk QueryCoordinationExecutor::getExtremes()
 {
-    return pulling_async_pipeline_executor->getExtremes();
+    chassert(pulling_root_executor != nullptr);
+    return pulling_root_executor->getExtremes();
 }
 
 Block QueryCoordinationExecutor::getTotalsBlock()
 {
-    return pulling_async_pipeline_executor->getTotalsBlock();
+    chassert(pulling_root_executor != nullptr);
+    return pulling_root_executor->getTotalsBlock();
 }
 
 Block QueryCoordinationExecutor::getExtremesBlock()
 {
-    return pulling_async_pipeline_executor->getExtremesBlock();
+    chassert(pulling_root_executor != nullptr);
+    return pulling_root_executor->getExtremesBlock();
 }
 
 ProfileInfo & QueryCoordinationExecutor::getProfileInfo()
 {
-    return pulling_async_pipeline_executor->getProfileInfo();
+    chassert(pulling_root_executor != nullptr);
+    return pulling_root_executor->getProfileInfo();
 }
 
 void QueryCoordinationExecutor::setException(std::exception_ptr exception_)

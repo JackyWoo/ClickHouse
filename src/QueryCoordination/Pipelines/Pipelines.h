@@ -22,7 +22,7 @@ public:
     QueryPipeline detachRootPipeline() { return std::move(root_pipeline.pipeline); }
 
     std::shared_ptr<QueryCoordinationExecutor>
-    createCoordinationExecutor(QueryPipeline & pipeline, const StorageLimitsList & storage_limits_);
+    createCoordinationExecutor(QueryPipeline & pipeline, const StorageLimitsList & storage_limits_, size_t interactive_timeout_ms);
 
     std::shared_ptr<CompletedPipelinesExecutor> createCompletedPipelinesExecutor();
 
