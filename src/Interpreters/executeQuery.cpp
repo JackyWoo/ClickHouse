@@ -1517,7 +1517,9 @@ void executeQuery(
         throw;
     }
 
+
     auto & pipeline = streams.pipeline;
+    ProgressCallback progress_callback;
 
     std::unique_ptr<WriteBuffer> compressed_buffer;
     try
@@ -1570,13 +1572,14 @@ void executeQuery(
             /// Save previous progress callback if any. TODO Do it more conveniently.
             auto previous_progress_callback = context->getProgressCallback();
 
-            /// NOTE Progress callback takes shared ownership of 'out'.
-            pipeline.setProgressCallback([output_format, previous_progress_callback] (const Progress & progress)
+            progress_callback = [output_format, previous_progress_callback] (const Progress & progress)
             {
                 if (previous_progress_callback)
                     previous_progress_callback(progress);
                 output_format->onProgress(progress);
-            });
+            };
+            /// NOTE Progress callback takes shared ownership of 'out'.
+            pipeline.setProgressCallback(progress_callback);
 
             result_details.content_type = output_format->getContentType();
             result_details.format = format_name;
@@ -1608,8 +1611,7 @@ void executeQuery(
 
                 auto remote_pipelines_manager = executor->getRemotePipelinesManager();
                 remote_pipelines_manager->setManagedNode(streams.query_coord_state.remote_host_connection);
-//                remote_pipelines_manager->setProgressCallback(
-//                    [this](const Progress & value) { return this->updateProgress(value); }, context->getProcessListElement());
+                remote_pipelines_manager->setProgressCallback(progress_callback, context->getProcessListElement());
                 executor->execute();
             }
             else
