@@ -19,7 +19,20 @@ using setExceptionCallback = std::function<void(std::exception_ptr exception_)>;
 class RemotePipelinesManager
 {
 public:
-    RemotePipelinesManager(const StorageLimitsList & storage_limits_) : log(&Poco::Logger::get("RemotePipelinesManager"))
+    struct ManagedNode
+    {
+        ManagedNode(const String & host_port_, const IConnectionPool::Entry & connection_)
+            : is_finished(false), host_port(host_port_), connection(connection_) {}
+
+        ManagedNode(const ManagedNode &other)
+            : is_finished(other.is_finished.load()), host_port(other.host_port), connection(other.connection) {}
+
+        std::atomic_bool is_finished;
+        String host_port;
+        IConnectionPool::Entry connection;
+    };
+
+    explicit RemotePipelinesManager(const StorageLimitsList & storage_limits_) : log(&Poco::Logger::get("RemotePipelinesManager"))
     {
         /// Remove leaf limits for remote pipelines manager.
         for (const auto & value : storage_limits_)
@@ -30,13 +43,13 @@ public:
 
     void setManagedNode(const std::unordered_map<String, IConnectionPool::Entry> & host_connection)
     {
-        for (auto & [host, connection] : host_connection)
-            managed_nodes.emplace_back(ManagedNode{.host_port = host, .connection = connection});
+        for (const auto & [host, connection] : host_connection)
+        {
+            managed_nodes.emplace_back(ManagedNode{host, connection});
+        }
     }
 
-    void asyncReceiveReporter();
-
-    void cancel();
+    void asyncReceiveReports();
 
     void setExceptionCallback(setExceptionCallback exception_callback_) { exception_callback = exception_callback_; }
 
@@ -52,18 +65,12 @@ public:
     void setProfileInfoCallback(ProfileInfoCallback callback) { profile_info_callback = std::move(callback); }
 
     void waitFinish();
-
     bool allFinished();
 
-private:
-    void receiveReporter(ThreadGroupPtr thread_group);
+    void cancel();
 
-    struct ManagedNode
-    {
-        bool is_finished = false;
-        String host_port;
-        IConnectionPool::Entry connection;
-    };
+private:
+    void receiveReportFromRemoteServers(ThreadGroupPtr thread_group);
 
     void processPacket(Packet & packet, ManagedNode & node);
 
@@ -72,7 +79,6 @@ private:
     StorageLimitsList storage_limits;
 
     ReadProgressCallbackPtr read_progress_callback;
-
     ProfileInfoCallback profile_info_callback;
 
     std::vector<ManagedNode> managed_nodes;
@@ -80,12 +86,9 @@ private:
     ThreadFromGlobalPool receive_reporter_thread;
 
     DB::setExceptionCallback exception_callback;
-
     std::atomic_bool cancelled = false;
-    std::atomic_bool cancelled_reading = false;
 
     Poco::Event finish_event{false};
-    std::mutex finish_mutex;
 };
 
 }

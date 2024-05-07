@@ -94,7 +94,7 @@ bool QueryCoordinationExecutor::pull(Block & block, uint64_t milliseconds)
         if (remote_pipelines_manager)
         {
             remote_pipelines_manager->setExceptionCallback(exception_callback);
-            remote_pipelines_manager->asyncReceiveReporter();
+            remote_pipelines_manager->asyncReceiveReports();
         }
         has_begun = true;
     }
@@ -129,7 +129,7 @@ void QueryCoordinationExecutor::execute()
     if (remote_pipelines_manager)
     {
         remote_pipelines_manager->setExceptionCallback(exception_callback);
-        remote_pipelines_manager->asyncReceiveReporter();
+        remote_pipelines_manager->asyncReceiveReports();
     }
 
     rethrowExceptionIfHas();

@@ -1095,7 +1095,7 @@ void TCPHandler::processOrdinaryQueryWithCoordination(std::function<void()> fini
             auto remote_pipelines_manager = executor->getRemotePipelinesManager();
             remote_pipelines_manager->setManagedNode(state.io.query_coord_state.remote_host_connection);
             remote_pipelines_manager->setProgressCallback(
-                [this](const Progress & value) { return this->updateProgress(value); }, query_context->getProcessListElement());
+                [this](const Progress & value) { this->updateProgress(value); }, query_context->getProcessListElement());
 
             CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
 

@@ -16,6 +16,42 @@ namespace ErrorCodes
 extern const int SYSTEM_ERROR;
 }
 
+void RemotePipelinesManager::receiveReportFromRemoteServers(ThreadGroupPtr thread_group)
+{
+    setThreadName("rcvRmtRpt");
+
+    if (thread_group)
+        CurrentThread::attachToGroup(thread_group);
+
+    SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
+
+    try
+    {
+        while (!cancelled.load())
+        {
+            /// TODO select or epoll
+            for (auto & node : managed_nodes)
+            {
+                if (node.is_finished)
+                    continue;
+
+                auto packet = node.connection->receivePacket();
+                processPacket(packet, node);
+            }
+
+            if (allFinished())
+            {
+                finish_event.set();
+                break;
+            }
+        }
+    }
+    catch (...)
+    {
+        exception_callback(std::current_exception());
+    }
+}
+
 void RemotePipelinesManager::processPacket(Packet & packet, ManagedNode & node)
 {
     switch (packet.type)
@@ -44,18 +80,17 @@ void RemotePipelinesManager::processPacket(Packet & packet, ManagedNode & node)
                 LOG_DEBUG(log, "{} update progress result_rows {}", node.host_port, packet.progress.result_rows);
                 LOG_DEBUG(log, "{} update progress result_bytes {}", node.host_port, packet.progress.result_bytes);
                 LOG_DEBUG(log, "{} update progress elapsed_ns {}", node.host_port, packet.progress.elapsed_ns);
-
+                
                 if (packet.progress.total_rows_to_read)
                     read_progress_callback->addTotalRowsApprox(packet.progress.total_rows_to_read);
 
                 if (!read_progress_callback->onProgress(packet.progress.read_rows, packet.progress.read_bytes, storage_limits))
                     LOG_WARNING(log, "Check Limit failed");
-
-                LOG_DEBUG(log, "Updated progress from {}", node.host_port);
             }
             break;
         }
         case Protocol::Server::ProfileEvents: {
+            LOG_DEBUG(log, "{} sending profile events", node.host_port);
             /// Pass profile events from remote server to client
             if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
                 if (!profile_queue->emplace(std::move(packet.block)))
@@ -63,12 +98,12 @@ void RemotePipelinesManager::processPacket(Packet & packet, ManagedNode & node)
             break;
         }
         case Protocol::Server::Exception: {
+            LOG_DEBUG(log, "{} sending exception", node.host_port);
             packet.exception->rethrow();
             break;
         }
         case Protocol::Server::EndOfStream: {
             node.is_finished = true;
-
             LOG_DEBUG(log, "{} is finished", node.host_port);
             break;
         }
@@ -78,44 +113,8 @@ void RemotePipelinesManager::processPacket(Packet & packet, ManagedNode & node)
     }
 }
 
-void RemotePipelinesManager::receiveReporter(ThreadGroupPtr thread_group)
-{
-    SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
-    setThreadName("rcvReporter");
-
-    try
-    {
-        if (thread_group)
-            CurrentThread::attachToGroup(thread_group);
-
-        while (!cancelled_reading.load() && !cancelled.load())
-        {
-            /// TODO select or epoll
-            for (auto & node : managed_nodes)
-            {
-                if (node.is_finished)
-                    continue;
-
-                auto packet = node.connection->receivePacket();
-                processPacket(packet, node);
-            }
-
-            if (allFinished())
-            {
-                finish_event.set();
-                break;
-            }
-        }
-    }
-    catch (...)
-    {
-        exception_callback(std::current_exception());
-    }
-}
-
 bool RemotePipelinesManager::allFinished()
 {
-    std::lock_guard lock(finish_mutex);
     for (auto & node : managed_nodes)
         if (!node.is_finished)
             return false;
@@ -123,9 +122,9 @@ bool RemotePipelinesManager::allFinished()
 }
 
 
-void RemotePipelinesManager::asyncReceiveReporter()
+void RemotePipelinesManager::asyncReceiveReports()
 {
-    auto func = [this, thread_group = CurrentThread::getGroup()]() { receiveReporter(thread_group); };
+    auto func = [this, thread_group = CurrentThread::getGroup()]() { receiveReportFromRemoteServers(thread_group); };
     receive_reporter_thread = ThreadFromGlobalPool(std::move(func));
 }
 
