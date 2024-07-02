@@ -44,6 +44,7 @@
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
 
+#include <Access/ContextAccess.h>
 #include <Access/EnabledQuota.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/Context.h>
@@ -65,9 +66,6 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
-#include <QueryCoordination/Exchange/ExchangeManager.h>
-#include <QueryCoordination/QueryCoordinationExecutor.h>
-#include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
 
 #include <IO/CompressionMethod.h>
 
@@ -82,6 +80,11 @@
 
 #include <memory>
 #include <random>
+
+#include <QueryCoordination/Exchange/ExchangeManager.h>
+#include <QueryCoordination/QueryCoordinationExecutor.h>
+#include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
+
 
 namespace ProfileEvents
 {
@@ -106,7 +109,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
-    extern const int INCORRECT_DATA;
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
@@ -203,6 +205,7 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
     /// so we pass elem.exception_format_string as format string instead.
     PreformattedMessage message;
     message.format_string = elem.exception_format_string;
+    message.format_string_args = elem.exception_format_string_args;
 
     if (elem.stack_trace.empty() || !log_error)
         message.text = fmt::format("{} (from {}){} (in query: {})", elem.exception,
@@ -222,6 +225,17 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
         LOG_ERROR(getLogger("executeQuery"), message);
     else
         LOG_INFO(getLogger("executeQuery"), message);
+}
+
+static void
+addPrivilegesInfoToQueryLogElement(QueryLogElement & element, const ContextPtr context_ptr)
+{
+    const auto & privileges_info = context_ptr->getQueryPrivilegesInfo();
+    {
+        std::lock_guard lock(privileges_info.mutex);
+        element.used_privileges = privileges_info.used_privileges;
+        element.missing_privileges = privileges_info.missing_privileges;
+    }
 }
 
 static void
@@ -262,25 +276,34 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     /// We need to refresh the access info since dependent views might have added extra information, either during
     /// creation of the view (PushingToViews chain) or while executing its internal SELECT
     const auto & access_info = context_ptr->getQueryAccessInfo();
-    element.query_databases.insert(access_info.databases.begin(), access_info.databases.end());
-    element.query_tables.insert(access_info.tables.begin(), access_info.tables.end());
-    element.query_columns.insert(access_info.columns.begin(), access_info.columns.end());
-    element.query_partitions.insert(access_info.partitions.begin(), access_info.partitions.end());
-    element.query_projections.insert(access_info.projections.begin(), access_info.projections.end());
-    element.query_views.insert(access_info.views.begin(), access_info.views.end());
+    {
+        std::lock_guard lock(access_info.mutex);
+        element.query_databases.insert(access_info.databases.begin(), access_info.databases.end());
+        element.query_tables.insert(access_info.tables.begin(), access_info.tables.end());
+        element.query_columns.insert(access_info.columns.begin(), access_info.columns.end());
+        element.query_partitions.insert(access_info.partitions.begin(), access_info.partitions.end());
+        element.query_projections.insert(access_info.projections.begin(), access_info.projections.end());
+        element.query_views.insert(access_info.views.begin(), access_info.views.end());
+    }
 
-    const auto factories_info = context_ptr->getQueryFactoriesInfo();
-    element.used_aggregate_functions = factories_info.aggregate_functions;
-    element.used_aggregate_function_combinators = factories_info.aggregate_function_combinators;
-    element.used_database_engines = factories_info.database_engines;
-    element.used_data_type_families = factories_info.data_type_families;
-    element.used_dictionaries = factories_info.dictionaries;
-    element.used_formats = factories_info.formats;
-    element.used_functions = factories_info.functions;
-    element.used_storages = factories_info.storages;
-    element.used_table_functions = factories_info.table_functions;
+    /// We copy QueryFactoriesInfo for thread-safety, because it is possible that query context can be modified by some processor even
+    /// after query is finished
+    const auto & factories_info(context_ptr->getQueryFactoriesInfo());
+    {
+        std::lock_guard lock(factories_info.mutex);
+        element.used_aggregate_functions = factories_info.aggregate_functions;
+        element.used_aggregate_function_combinators = factories_info.aggregate_function_combinators;
+        element.used_database_engines = factories_info.database_engines;
+        element.used_data_type_families = factories_info.data_type_families;
+        element.used_dictionaries = factories_info.dictionaries;
+        element.used_formats = factories_info.formats;
+        element.used_functions = factories_info.functions;
+        element.used_storages = factories_info.storages;
+        element.used_table_functions = factories_info.table_functions;
+    }
 
     element.async_read_counters = context_ptr->getAsyncReadCounters();
+    addPrivilegesInfoToQueryLogElement(element, context_ptr);
 }
 
 
@@ -327,6 +350,7 @@ QueryLogElement logQueryStart(
         if (pipeline.initialized())
         {
             const auto & info = context->getQueryAccessInfo();
+            std::lock_guard lock(info.mutex);
             elem.query_databases = info.databases;
             elem.query_tables = info.tables;
             elem.query_columns = info.columns;
@@ -1514,9 +1538,15 @@ void executeQuery(
             if (output_format)
                 handle_exception_in_output_format(*output_format, format_name, context, output_format_settings);
         }
+        /// The timezone was already set before query was processed,
+        /// But `session_timezone` setting could be modified in the query itself, so we update the value.
+        result_details.timezone = DateLUT::instance().getTimeZone();
         throw;
     }
 
+    /// The timezone was already set before query was processed,
+    /// But `session_timezone` setting could be modified in the query itself, so we update the value.
+    result_details.timezone = DateLUT::instance().getTimeZone();
 
     auto & pipeline = streams.pipeline;
     ProgressCallback progress_callback;

@@ -60,6 +60,7 @@ public:
     const Aggregator::Params & getParams() const { return params; }
 
     const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }
+    bool isGroupByUseNulls() const { return group_by_use_nulls; }
 
     bool isFinal() const { return final; }
     bool inOrder() const { return !sort_description_for_merging.empty(); }

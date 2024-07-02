@@ -11,15 +11,16 @@ namespace DB
 class SortingStep : public ITransformingStep
 {
 public:
+
     /// Only work on query coordination
-    enum Phase
+    enum Phase : uint8_t
     {
         Final,
         Preliminary,
         Unknown,
     };
 
-    enum class Type
+    enum class Type : uint8_t
     {
         Full,
         FinishSorting,
@@ -35,6 +36,7 @@ public:
         size_t max_bytes_before_external_sort = 0;
         TemporaryDataOnDiskScopePtr tmp_data = nullptr;
         size_t min_free_disk_space = 0;
+        size_t max_block_bytes = 0;
 
         explicit Settings(const Context & context);
         explicit Settings(size_t max_block_size_);
@@ -99,33 +101,6 @@ public:
         UInt64 limit_,
         bool skip_partial_sort = false);
 
-    Phase getPhase() const { return phase; }
-
-    void setPhase(Phase phase_) { phase = phase_; }
-
-    StepType stepType() const override
-    {
-        return Sort;
-    }
-
-    std::shared_ptr<SortingStep> clone()
-    {
-        switch (type)
-        {
-            case Type::Full:
-                return std::make_shared<SortingStep>(input_streams[0], result_description, limit, sort_settings, optimize_sorting_by_input_stream_properties);
-            case Type::FinishSorting:
-                return std::make_shared<SortingStep>(input_streams[0], prefix_description, result_description, sort_settings.max_block_size, limit);
-            case Type::MergingSorted:
-                return std::make_shared<SortingStep>(input_streams[0], result_description, sort_settings.max_block_size, limit, always_read_till_end);
-        }
-    }
-
-    const SortDescription & getPrefixDescription() const
-    {
-        return prefix_description;
-    }
-
 private:
     void scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline);
     void updateOutputStream() override;
@@ -164,8 +139,6 @@ private:
     Settings sort_settings;
 
     const bool optimize_sorting_by_input_stream_properties = false;
-
-    Phase phase = Phase::Unknown;
 };
 
 }

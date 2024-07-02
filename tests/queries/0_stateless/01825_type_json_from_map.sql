@@ -5,6 +5,7 @@ DROP TABLE IF EXISTS t_json;
 DROP TABLE IF EXISTS t_map;
 
 SET allow_experimental_object_type = 1;
+SET optimize_trivial_insert_select = 1;
 
 CREATE TABLE t_json(id UInt64, obj JSON) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE t_map(id UInt64, m Map(String, UInt64)) ENGINE = MergeTree ORDER BY id;
@@ -36,7 +37,7 @@ SELECT sum(obj.col1), sum(obj.col4), sum(obj.col7), sum(obj.col8 = 0) FROM t_jso
 
 INSERT INTO t_json
 SELECT number, (range(number % 10), range(number % 10))::Map(UInt64, UInt64)
-FROM numbers(1000000); -- { serverError 53 }
+FROM numbers(1000000); -- { serverError TYPE_MISMATCH }
 
 DROP TABLE IF EXISTS t_json;
 DROP TABLE IF EXISTS t_map;
