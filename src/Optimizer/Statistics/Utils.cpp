@@ -92,7 +92,7 @@ void adjustStatisticsByColumns(Stats & statistics, const Names & final_columns)
     /// add missing
     for (const auto & column : final_columns)
         if (!statistics.containsColumnStatistics(column))
-            statistics.addColumnStatistics(column, ColumnStatistics::unknown());
+            statistics.addColumnStatistics(column, ColumnStats::unknown());
 }
 
 }

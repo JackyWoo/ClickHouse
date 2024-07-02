@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Optimizer/Statistics/ColumnStatistics.h>
+#include <Optimizer/Statistics/ColumnStats.h>
 #include <base/types.h>
 
 namespace DB
@@ -20,11 +20,11 @@ public:
     void setOutputRowSize(Float64 row_size);
     Float64 getOutputRowSize() const;
 
-    void addColumnStatistics(const String & column_name, ColumnStatisticsPtr column_stats);
+    void addColumnStatistics(const String & column_name, ColumnStatsPtr column_stats);
     void removeColumnStatistics(const String & column_name);
 
     bool containsColumnStatistics(const String & column_name) const;
-    ColumnStatisticsPtr getColumnStatistics(const String & column_name) const;
+    ColumnStatsPtr getColumnStatistics(const String & column_name) const;
 
     void addAllColumnsFrom(const Stats & other);
 
@@ -35,7 +35,7 @@ public:
     bool hasUnknownColumn(const Names & columns) const;
 
     void adjustStatistics();
-    void mergeColumnValueByUnion(const String & column_name, ColumnStatisticsPtr other);
+    void mergeColumnValueByUnion(const String & column_name, ColumnStatsPtr other);
 
     void reset();
 

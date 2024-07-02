@@ -622,6 +622,16 @@ public:
     std::optional<UUID> getUserID() const;
     String getUserName() const;
 
+    Int32 getFragmentID()
+    {
+        return ++fragment_id_counter;
+    }
+
+    void addQueryCoordinationMetaInfo(String cluster_name_, const std::vector<StorageID> & storages_, const std::vector<String> & sharding_keys_);
+    const QueryCoordinationMetaInfo & getQueryCoordinationMetaInfo() const;
+
+    void setQuotaKey(String quota_key_);
+
     void setCurrentRoles(const std::vector<UUID> & current_roles_);
     void setCurrentRolesDefault();
     std::vector<UUID> getCurrentRoles() const;

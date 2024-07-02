@@ -1,7 +1,5 @@
 #pragma once
 
-#include <memory>
-#include <math.h>
 #include <DataTypes/IDataType.h>
 #include <Optimizer/Statistics/Histogram.h>
 #include <base/types.h>
@@ -9,12 +7,12 @@
 namespace DB
 {
 
-class ColumnStatistics;
+class ColumnStats;
 
-using ColumnStatisticsPtr = std::shared_ptr<ColumnStatistics>;
-using ColumnStatisticsMap = std::unordered_map<String, ColumnStatisticsPtr>;
+using ColumnStatsPtr = std::shared_ptr<ColumnStats>;
+using ColumnStatisticsMap = std::unordered_map<String, ColumnStatsPtr>;
 
-class ColumnStatistics
+class ColumnStats
 {
 public:
     enum OP_TYPE
@@ -27,7 +25,7 @@ public:
         LESS_OR_EQUAL
     };
 
-    ColumnStatistics(
+    ColumnStats(
         Float64 min_value_,
         Float64 max_value_,
         Float64 ndv_,
@@ -45,35 +43,35 @@ public:
     {
     }
 
-    ColumnStatistics() : ColumnStatistics(0.0, 0.0, 1.0, 1.0, {}, false, {}) { }
-    ColumnStatistics(Float64 value) : ColumnStatistics(value, value, 1.0, 1.0, {}, false, {}) { }
+    ColumnStats() : ColumnStats(0.0, 0.0, 1.0, 1.0, {}, false, {}) { }
+    ColumnStats(Float64 value) : ColumnStats(value, value, 1.0, 1.0, {}, false, {}) { }
 
-    ColumnStatistics(Float64 min_value_, Float64 max_value_, Float64 ndv_, Float64 avg_row_size_)
-        : ColumnStatistics(min_value_, max_value_, ndv_, avg_row_size_, {}, false, {})
+    ColumnStats(Float64 min_value_, Float64 max_value_, Float64 ndv_, Float64 avg_row_size_)
+        : ColumnStats(min_value_, max_value_, ndv_, avg_row_size_, {}, false, {})
     {
     }
 
-    ColumnStatistics(Float64 min_value_, Float64 max_value_, Float64 ndv_, Float64 avg_row_size_, DataTypePtr data_type_)
-        : ColumnStatistics(min_value_, max_value_, ndv_, avg_row_size_, data_type_, data_type_ == nullptr, {})
+    ColumnStats(Float64 min_value_, Float64 max_value_, Float64 ndv_, Float64 avg_row_size_, DataTypePtr data_type_)
+        : ColumnStats(min_value_, max_value_, ndv_, avg_row_size_, data_type_, data_type_ == nullptr, {})
     {
     }
 
-    static ColumnStatisticsPtr unknown();
-    static ColumnStatisticsPtr create(Float64 value);
+    static ColumnStatsPtr unknown();
+    static ColumnStatsPtr create(Float64 value);
 
     /// Calculate selectivity by value and adjust min_value, max_value and ndv.
     Float64 calculateByValue(OP_TYPE, Float64 value);
 
     /// Union min_value/max_value with others
-    void mergeColumnValueByUnion(ColumnStatisticsPtr other);
+    void mergeColumnValueByUnion(ColumnStatsPtr other);
 
     /// Intersect min_value/max_value with others
-    void mergeColumnValueByIntersect(ColumnStatisticsPtr other);
+    void mergeColumnValueByIntersect(ColumnStatsPtr other);
 
     /// Revert min_value/max_value with others
     void revertColumnValue();
 
-    ColumnStatisticsPtr clone();
+    ColumnStatsPtr clone();
     bool isUnKnown() const;
 
     Float64 getNdv() const;

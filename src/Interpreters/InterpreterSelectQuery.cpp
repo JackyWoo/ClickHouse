@@ -1460,7 +1460,6 @@ void addBuildSubqueriesForSetsStep(
     if (!subqueries.empty())
     {
         auto step = std::make_unique<DelayedCreatingSetsStep>(query_plan.getCurrentDataStream(), std::move(subqueries), context);
-
         query_plan.addStep(std::move(step));
     }
 }
@@ -2630,13 +2629,13 @@ void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsA
         dag->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
 
     auto where_step = std::make_unique<FilterStep>(
-        query_plan.getCurrentDataStream(), std::move(dag), getSelectQuery().where()->getColumnName(), remove_filter);
+        query_plan.getCurrentDataStream(), dag, getSelectQuery().where()->getColumnName(), remove_filter);
 
     where_step->setStepDescription("WHERE");
     query_plan.addStep(std::move(where_step));
 
     if (context->isDistributedForQueryCoord())
-        addBuildSubqueriesForSetsStep(query_plan, context, *prepared_sets, {expression});
+        addBuildSubqueriesForSetsStep(query_plan, context, *prepared_sets, {dag});
 }
 
 static Aggregator::Params getAggregatorParams(
@@ -2710,9 +2709,6 @@ static GroupingSetsParamsList getAggregatorGroupingSetsParams(const SelectQueryE
 void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info)
 {
     executeExpression(query_plan, expression, "Before GROUP BY");
-
-    if (context->isDistributedForQueryCoord())
-        addBuildSubqueriesForSetsStep(query_plan, context, *prepared_sets, {expression});
 
     AggregateDescriptions aggregates = query_analyzer->aggregates();
     const Settings & settings = context->getSettingsRef();
@@ -2810,13 +2806,13 @@ void InterpreterSelectQuery::executeHaving(QueryPlan & query_plan, const Actions
         dag->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
 
     auto having_step
-        = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(), std::move(dag), getSelectQuery().having()->getColumnName(), remove_filter);
+        = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(), dag, getSelectQuery().having()->getColumnName(), remove_filter);
 
     having_step->setStepDescription("HAVING");
     query_plan.addStep(std::move(having_step));
 
     if (context->isDistributedForQueryCoord())
-        addBuildSubqueriesForSetsStep(query_plan, context, *prepared_sets, {expression});
+        addBuildSubqueriesForSetsStep(query_plan, context, *prepared_sets, {dag});
 }
 
 
@@ -2847,7 +2843,7 @@ void InterpreterSelectQuery::executeTotalsAndHaving(
     query_plan.addStep(std::move(totals_having_step));
 
     if (context->isDistributedForQueryCoord())
-        addBuildSubqueriesForSetsStep(query_plan, context, *prepared_sets, {expression});
+        addBuildSubqueriesForSetsStep(query_plan, context, *prepared_sets, {expression->dag.clone()});
 }
 
 void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modificator modificator)
@@ -2882,10 +2878,13 @@ void InterpreterSelectQuery::executeExpression(QueryPlan & query_plan, const Act
     if (expression->project_input)
         dag->appendInputsForUnusedColumns(query_plan.getCurrentDataStream().header);
 
-    auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(dag));
+    auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), dag);
 
     expression_step->setStepDescription(description);
     query_plan.addStep(std::move(expression_step));
+
+    if (context->isDistributedForQueryCoord())
+        addBuildSubqueriesForSetsStep(query_plan, context, *prepared_sets, {dag});
 }
 
 static bool windowDescriptionComparator(const WindowDescription * _left, const WindowDescription * _right)
@@ -3294,7 +3293,6 @@ void InterpreterSelectQuery::initSettings()
         /// Disable two-level aggregation due to version incompatibility.
         context->setSetting("group_by_two_level_threshold", Field(0));
         context->setSetting("group_by_two_level_threshold_bytes", Field(0));
-
     }
 }
 

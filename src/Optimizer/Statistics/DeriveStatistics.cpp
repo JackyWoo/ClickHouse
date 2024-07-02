@@ -37,7 +37,7 @@ Stats DeriveStatistics::visitDefault(IQueryPlanStep & step)
     // if not found (step may change input columns) make unknown column statistics
     for (const auto & output_column : output_columns)
     {
-        ColumnStatisticsPtr output_column_stats;
+        ColumnStatsPtr output_column_stats;
         for (size_t i = 0; i < input_statistics.size(); i++)
         {
             if (input_statistics[i].containsColumnStatistics(output_column))
@@ -49,7 +49,7 @@ Stats DeriveStatistics::visitDefault(IQueryPlanStep & step)
         if (output_column_stats)
             statistics.addColumnStatistics(output_column, output_column_stats->clone());
         else
-            statistics.addColumnStatistics(output_column, ColumnStatistics::unknown());
+            statistics.addColumnStatistics(output_column, ColumnStats::unknown());
     }
 
     /// Calculate output row count
@@ -81,7 +81,7 @@ Stats DeriveStatistics::visit(ReadFromMergeTree & step)
     {
         for (const auto & column : columns)
             if (!input->containsColumnStatistics(column))
-                input->addColumnStatistics(column, ColumnStatistics::unknown());
+                input->addColumnStatistics(column, ColumnStats::unknown());
     };
 
     add_column_if_not_exist(step.getAllColumnNames());
@@ -172,7 +172,7 @@ Stats DeriveStatistics::visit(AggregatingStep & step)
 
     /// The first column of grouping set aggregation is "__grouping_set"
     if (step.isGroupingSets())
-        statistics.addColumnStatistics(output_names[0], ColumnStatistics::create(1.0));
+        statistics.addColumnStatistics(output_names[0], ColumnStats::create(1.0));
 
     /// keys
     for (const String & key : step.getParams().keys)
@@ -184,7 +184,7 @@ Stats DeriveStatistics::visit(AggregatingStep & step)
     /// aggregates
     for (const auto & aggregate : step.getParams().aggregates)
     {
-        statistics.addColumnStatistics(aggregate.column_name, ColumnStatistics::create(1.0));
+        statistics.addColumnStatistics(aggregate.column_name, ColumnStats::create(1.0));
     }
 
     /// 2. calculate selectivity
@@ -288,7 +288,7 @@ Stats DeriveStatistics::visit(AggregatingStep & step)
 
         /// Input stream of aggregating step may has 0 header column, such as: 'select count() from t'.
         if (!statistics.containsColumnStatistics(aggregate.column_name))
-            statistics.addColumnStatistics(aggregate.column_name, ColumnStatistics::unknown());
+            statistics.addColumnStatistics(aggregate.column_name, ColumnStats::unknown());
 
         auto output_column_stats = statistics.getColumnStatistics(aggregate.column_name);
         chassert(output_column && output_column_stats);
@@ -336,7 +336,7 @@ Stats DeriveStatistics::visit(CreatingSetsStep & step)
     // if not found (step may change input columns) make unknown column statistics
     for (const auto & output_column : output_columns)
     {
-        ColumnStatisticsPtr output_column_stats;
+        ColumnStatsPtr output_column_stats;
         for (size_t i = 0; i < input_statistics.size(); i++)
         {
             if (input_statistics[i].containsColumnStatistics(output_column))
@@ -348,7 +348,7 @@ Stats DeriveStatistics::visit(CreatingSetsStep & step)
         if (output_column_stats)
             statistics.addColumnStatistics(output_column, output_column_stats->clone());
         else
-            statistics.addColumnStatistics(output_column, ColumnStatistics::unknown());
+            statistics.addColumnStatistics(output_column, ColumnStats::unknown());
     }
 
     /// Calculate output row count

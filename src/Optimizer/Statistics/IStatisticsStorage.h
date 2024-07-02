@@ -2,7 +2,7 @@
 
 #include <Interpreters/Cluster.h>
 #include <Interpreters/StorageID.h>
-#include <Optimizer/Statistics/ColumnStatistics.h>
+#include <Optimizer/Statistics/ColumnStats.h>
 #include <Optimizer/Statistics/Stats.h>
 
 namespace DB

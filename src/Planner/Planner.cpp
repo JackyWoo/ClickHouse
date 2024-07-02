@@ -353,8 +353,8 @@ void addExpressionStep(QueryPlan & query_plan,
     query_plan.addStep(std::move(expression_step));
 
     auto query_context = planner_context->getQueryContext();
-    if (expression_actions && query_context->isDistributedForQueryCoord())
-        addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, {expression_actions});
+    if (result_actions_to_execute.empty() && query_context->isDistributedForQueryCoord())
+        addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, result_actions_to_execute);
 }
 
 void addFilterStep(QueryPlan & query_plan,
@@ -377,8 +377,8 @@ void addFilterStep(QueryPlan & query_plan,
     query_plan.addStep(std::move(where_step));
 
     auto query_context = planner_context->getQueryContext();
-    if (filter_analysis_result.filter_actions && query_context->isDistributedForQueryCoord())
-        addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, {filter_analysis_result.filter_actions});
+    if (result_actions_to_execute.empty() && query_context->isDistributedForQueryCoord())
+        addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, result_actions_to_execute);
 }
 
 Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context,
@@ -596,8 +596,8 @@ void addTotalsHavingStep(QueryPlan & query_plan,
         need_finalize);
     query_plan.addStep(std::move(totals_having_step));
 
-    if (having_analysis_result.filter_actions && query_context->isDistributedForQueryCoord())
-        addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, {having_analysis_result.filter_actions});
+    if (!result_actions_to_execute.empty() && query_context->isDistributedForQueryCoord())
+        addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, result_actions_to_execute);
 }
 
 void addCubeOrRollupStepIfNeeded(QueryPlan & query_plan,
@@ -1569,15 +1569,14 @@ void Planner::buildPlanForQueryNode()
     for (auto & [_, table_expression_data] : planner_context->getTableExpressionNodeToData())
     {
         if (table_expression_data.getPrewhereFilterActions())
-        {
             result_actions_to_execute.push_back(table_expression_data.getPrewhereFilterActions());
-            if (query_context->isDistributedForQueryCoord())
-                addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, {table_expression_data.getPrewhereFilterActions()});
-        }
 
         if (table_expression_data.getRowLevelFilterActions())
             result_actions_to_execute.push_back(table_expression_data.getRowLevelFilterActions());
     }
+
+    if (!result_actions_to_execute.empty() && query_context->isDistributedForQueryCoord())
+        addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, result_actions_to_execute);
 
     if (query_processing_info.isIntermediateStage())
     {
@@ -1712,7 +1711,7 @@ void Planner::buildPlanForQueryNode()
             }
 
             if (expression_analysis_result.hasQualify())
-                addFilterStep(query_plan, expression_analysis_result.getQualify(), "QUALIFY", result_actions_to_execute);
+                addFilterStep(query_plan, expression_analysis_result.getQualify(), "QUALIFY", result_actions_to_execute, select_query_options, planner_context);
 
             const auto & projection_analysis_result = expression_analysis_result.getProjection();
             addExpressionStep(query_plan, projection_analysis_result.projection_actions, "Projection", result_actions_to_execute, select_query_options, planner_context);
@@ -1823,7 +1822,7 @@ void Planner::buildPlanForQueryNode()
         addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context);
     }
 
-    if (!select_query_options.only_analyze && !planner_context->getQueryContext()->isDistributedForQueryCoord())
+    if (!select_query_options.only_analyze && result_actions_to_execute.empty() && !planner_context->getQueryContext()->isDistributedForQueryCoord())
         addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, result_actions_to_execute);
 
     query_node_to_plan_step_mapping[&query_node] = query_plan.getRootNode();

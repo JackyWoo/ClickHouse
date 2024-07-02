@@ -85,7 +85,7 @@ Stats ExpressionStatsCalculator::calculateStatistics(const ActionsDAGPtr & expre
         /// Output column contains multi-input node, for example: 'col1 + col2'
         if (context[output_node].input_node_stats.size() > 1)
         {
-            statistics.addColumnStatistics(output_node->result_name, ColumnStatistics::unknown());
+            statistics.addColumnStatistics(output_node->result_name, ColumnStats::unknown());
         }
         /// for 'col1 + 1'
         else if (context[output_node].input_node_stats.size() == 1)
@@ -96,7 +96,7 @@ Stats ExpressionStatsCalculator::calculateStatistics(const ActionsDAGPtr & expre
         /// for rand()
         else
         {
-            statistics.addColumnStatistics(output_node->result_name, ColumnStatistics::create(*context[output_node].value));
+            statistics.addColumnStatistics(output_node->result_name, ColumnStats::create(*context[output_node].value));
         }
     }
 

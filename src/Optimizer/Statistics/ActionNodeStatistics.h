@@ -1,12 +1,12 @@
 #pragma once
 
 #include <Interpreters/ActionsDAG.h>
-#include <Optimizer/Statistics/ColumnStatistics.h>
+#include <Optimizer/Statistics/ColumnStats.h>
 
 namespace DB
 {
 
-using InputNodeStatsMap = std::unordered_map<const ActionsDAG::Node *, ColumnStatisticsPtr>;
+using InputNodeStatsMap = std::unordered_map<const ActionsDAG::Node *, ColumnStatsPtr>;
 
 /** Represent input node statistics after a action node applied.
  *  Note that ActionNodeStatistics only concerns about the nodes
@@ -31,7 +31,7 @@ struct ActionNodeStatistics
     /// For non const node, represent the input nodes statistics after the action node
     InputNodeStatsMap input_node_stats;
 
-    ColumnStatisticsPtr get(const ActionsDAG::Node * node)
+    ColumnStatsPtr get(const ActionsDAG::Node * node)
     {
         if (input_node_stats.contains(node))
             return input_node_stats.at(node);
@@ -39,14 +39,14 @@ struct ActionNodeStatistics
     }
 
     /// get the unique ColumnStatisticsPtr
-    ColumnStatisticsPtr get()
+    ColumnStatsPtr get()
     {
         if (input_node_stats.size() == 1)
             return input_node_stats.begin()->second;
         return {};
     }
 
-    void set(const ActionsDAG::Node * node, ColumnStatisticsPtr stats) { input_node_stats.insert({node, stats}); }
+    void set(const ActionsDAG::Node * node, ColumnStatsPtr stats) { input_node_stats.insert({node, stats}); }
 
     std::set<const ActionsDAG::Node *> getInputNodes()
     {

@@ -309,7 +309,7 @@ std::shared_ptr<ColumnStatisticsMap> loadColumnStats(const StorageID & storage_i
         for (size_t i = 0; i < block.rows(); i++)
         {
             auto column = block.getByPosition(0).column->getDataAt(i).toString();
-            auto column_stats = std::make_shared<ColumnStatistics>();
+            auto column_stats = std::make_shared<ColumnStats>();
 
             column_stats->setNdv(block.getByPosition(1).column->getFloat64(i));
             column_stats->setMinValue(block.getByPosition(2).column->getFloat64(i));

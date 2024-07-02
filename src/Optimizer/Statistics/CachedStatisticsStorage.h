@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Optimizer/Statistics/ColumnStatistics.h>
+#include <Optimizer/Statistics/ColumnStats.h>
 #include <Optimizer/Statistics/IStatisticsStorage.h>
 #include <Optimizer/Statistics/Stats.h>
 #include <Common/ThreadPool.h>

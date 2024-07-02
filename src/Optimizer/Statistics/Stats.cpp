@@ -14,7 +14,7 @@ Stats Stats::unknown(const Names & column_names)
     statistics.setOutputRowSize(1.0);
 
     for (const auto & column_name : column_names)
-        statistics.addColumnStatistics(column_name, ColumnStatistics::unknown());
+        statistics.addColumnStatistics(column_name, ColumnStats::unknown());
     return statistics;
 }
 
@@ -51,7 +51,7 @@ Float64 Stats::getOutputRowSize() const
     return output_row_size;
 }
 
-void Stats::addColumnStatistics(const String & column_name, ColumnStatisticsPtr column_stats)
+void Stats::addColumnStatistics(const String & column_name, ColumnStatsPtr column_stats)
 {
     if (columns_stats_map.contains(column_name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Already exists statistics for column {}", column_name);
@@ -70,7 +70,7 @@ bool Stats::containsColumnStatistics(const String & column_name) const
     return columns_stats_map.contains(column_name);
 }
 
-ColumnStatisticsPtr Stats::getColumnStatistics(const String & column_name) const
+ColumnStatsPtr Stats::getColumnStatistics(const String & column_name) const
 {
     if (!columns_stats_map.contains(column_name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No statistics for column {}", column_name);
@@ -116,7 +116,7 @@ void Stats::adjustStatistics()
     }
 }
 
-void Stats::mergeColumnValueByUnion(const String & column_name, ColumnStatisticsPtr other)
+void Stats::mergeColumnValueByUnion(const String & column_name, ColumnStatsPtr other)
 {
     if (!other)
         return;

@@ -170,9 +170,9 @@ namespace Protocol
             SSHChallengeRequest = 11,       /// Request for SSH signature challenge
             SSHChallengeResponse = 12,      /// Reply to SSH signature challenge
 
-            PlanFragments = 12,             /// Request for query plan fragments in query coordination
-            BeginExecutePipelines = 13,     /// Request for beginning to execute in query coordination
-            ExchangeData = 14,              /// Data exchanging in query coordination
+            PlanFragments = 13,             /// Request for query plan fragments in query coordination
+            BeginExecutePipelines = 14,     /// Request for beginning to execute in query coordination
+            ExchangeData = 15,              /// Data exchanging in query coordination
             MAX = ExchangeData,
         };
 

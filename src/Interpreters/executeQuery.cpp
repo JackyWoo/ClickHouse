@@ -531,6 +531,7 @@ void logQueryException(
     auto exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
     elem.exception = std::move(exception_message.text);
     elem.exception_format_string = exception_message.format_string;
+    elem.exception_format_string_args = exception_message.format_string_args;
 
     QueryStatusPtr process_list_elem = context->getProcessListElement();
 
@@ -618,12 +619,15 @@ void logExceptionBeforeStart(
             elem.formatted_query = queryToString(ast);
     }
 
+    addPrivilegesInfoToQueryLogElement(elem, context);
+
     // We don't calculate databases, tables and columns when the query isn't able to start
 
     elem.exception_code = getCurrentExceptionCode();
     auto exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
     elem.exception = std::move(exception_message.text);
     elem.exception_format_string = exception_message.format_string;
+    elem.exception_format_string_args = exception_message.format_string_args;
 
     elem.client_info = context->getClientInfo();
 
@@ -798,6 +802,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             catch (const Exception & e)
             {
                 if (e.code() == ErrorCodes::SYNTAX_ERROR)
+                    /// Don't print the original query text because it may contain sensitive data.
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Inconsistent AST formatting: the query:\n{}\ncannot parse.",
                         formatted1);
@@ -822,12 +827,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         bool is_create_parameterized_view = false;
         if (const auto * create_query = ast->as<ASTCreateQuery>())
+        {
             is_create_parameterized_view = create_query->isParameterizedView();
+        }
         else if (const auto * explain_query = ast->as<ASTExplainQuery>())
         {
-            assert(!explain_query->children.empty());
-            if (const auto * create_of_explain_query = explain_query->children[0]->as<ASTCreateQuery>())
-                is_create_parameterized_view = create_of_explain_query->isParameterizedView();
+            if (!explain_query->children.empty())
+                if (const auto * create_of_explain_query = explain_query->children[0]->as<ASTCreateQuery>())
+                    is_create_parameterized_view = create_of_explain_query->isParameterizedView();
         }
 
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
@@ -1106,6 +1113,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             && (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>());
         QueryCache::Usage query_cache_usage = QueryCache::Usage::None;
 
+        /// If the query runs with "use_query_cache = 1", we first probe if the query cache already contains the query result (if yes:
+        /// return result from cache). If doesn't, we execute the query normally and write the result into the query cache. Both steps use a
+        /// hash of the AST, the current database and the settings as cache key. Unfortunately, the settings are in some places internally
+        /// modified between steps 1 and 2 (= during query execution) - this is silly but hard to forbid. As a result, the hashes no longer
+        /// match and the cache is rendered ineffective. Therefore make a copy of the settings and use it for steps 1 and 2.
+        std::optional<Settings> settings_copy;
+        if (can_use_query_cache)
+            settings_copy = settings;
+
         if (!async_insert)
         {
             /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then set
@@ -1114,7 +1130,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             {
                 if (can_use_query_cache && settings.enable_reads_from_query_cache)
                 {
-                    QueryCache::Key key(ast, context->getUserID(), context->getCurrentRoles());
+                    QueryCache::Key key(ast, context->getCurrentDatabase(), *settings_copy, context->getUserID(), context->getCurrentRoles());
                     QueryCache::Reader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
@@ -1198,7 +1214,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
 
                 if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(&*interpreter))
+                {
                     create_interpreter->setIsRestoreFromBackup(flags.distributed_backup_restore);
+                }
 
                 {
                     std::unique_ptr<OpenTelemetry::SpanHolder> span;
@@ -1237,7 +1255,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                             && (!ast_contains_system_tables || system_table_handling == QueryCacheSystemTableHandling::Save))
                         {
                             QueryCache::Key key(
-                                ast, res.pipeline.getHeader(),
+                                ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getHeader(),
                                 context->getUserID(), context->getCurrentRoles(),
                                 settings.query_cache_share_between_users,
                                 std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
@@ -1264,32 +1282,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                             }
                         }
                     }
-
                 }
             }
-        }
-        // Here we check if our our projections contain force_optimize_projection_name
-        if (!settings.force_optimize_projection_name.value.empty())
-        {
-            bool found = false;
-            std::set<std::string> projections = context->getQueryAccessInfo().projections;
-
-            for (const auto &projection : projections)
-            {
-                // projection value has structure like: <db_name>.<table_name>.<projection_name>
-                // We need to get only the projection name
-                size_t last_dot_pos = projection.find_last_of('.');
-                std::string projection_name = (last_dot_pos != std::string::npos) ? projection.substr(last_dot_pos + 1) : projection;
-                if (settings.force_optimize_projection_name.value == projection_name)
-                {
-                    found = true;
-                    break;
-                }
-            }
-
-            if (!found)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Projection {} is specified in setting force_optimize_projection_name but not used",
-                                settings.force_optimize_projection_name.value);
         }
 
         if (process_list_entry)
@@ -1434,7 +1428,16 @@ void executeQuery(
     const char * begin;
     const char * end;
 
-    istr.nextIfAtEnd();
+    try
+    {
+        istr.nextIfAtEnd();
+    }
+    catch (...)
+    {
+        /// If buffer contains invalid data and we failed to decompress, we still want to have some information about the query in the log.
+        logQuery("<cannot parse>", context, /* internal = */ false, QueryProcessingStage::Complete);
+        throw;
+    }
 
     size_t max_query_size = context->getSettingsRef().max_query_size;
 

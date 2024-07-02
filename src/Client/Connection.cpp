@@ -45,6 +45,8 @@
 #include <Processors/ISink.h>
 #include <QueryCoordination/Fragments/FragmentRequest.h>
 #include <QueryCoordination/QueryCoordinationMetaInfo.h>
+#include <QueryCoordination/Exchange/ExchangeDataRequest.h>
+#include <Interpreters/Cluster.h>
 
 
 #if USE_SSL
@@ -862,6 +864,48 @@ void Connection::sendCancel()
     out->next();
 }
 
+void Connection::sendExchangeData(const ExchangeDataRequest & request)
+{
+    compression_codec = CompressionCodecFactory::instance().getDefaultCodec();
+
+    writeVarUInt(Protocol::Client::ExchangeData, *out);
+    request.write(*out);
+
+    writeVarUInt(static_cast<bool>(compression), *out);
+
+    out->next();
+
+    maybe_compressed_out.reset();
+    block_out.reset();
+}
+
+void Connection::sendFragments(
+    const ConnectionTimeouts & timeouts,
+    const String & query,
+    const NameToNameMap & query_parameters,
+    const String & query_id_,
+    UInt64 stage,
+    const Settings * settings,
+    const ClientInfo * client_info,
+    const FragmentsRequest & fragment,
+    const QueryCoordinationMetaInfo & meta_info)
+{
+    writeVarUInt(Protocol::Client::PlanFragments, *out);
+    sendQuery(timeouts, query, query_parameters, query_id_, stage, settings, client_info, true, {}, false);
+    fragment.write(*out);
+
+    LOG_DEBUG(log_wrapper.get(), "Send QueryCoordinationMetaInfo {}", meta_info.toString());
+    meta_info.write(*out);
+    sendData(Block(), "", false); // tcphandler and executeQuery use initializeExternalTablesIfSet
+    out->next();
+}
+
+void Connection::sendBeginExecutePipelines(const String & query_id_)
+{
+    writeVarUInt(Protocol::Client::BeginExecutePipelines, *out);
+    writeStringBinary(query_id_, *out);
+    out->next();
+}
 
 void Connection::sendData(const Block & block, const String & name, bool scalar)
 {
@@ -1197,6 +1241,9 @@ Packet Connection::receivePacket()
             case Protocol::Server::TimezoneUpdate:
                 readStringBinary(server_timezone, *in);
                 res.server_timezone = server_timezone;
+                return res;
+
+            case Protocol::Server::PipelinesReady:
                 return res;
 
             default:

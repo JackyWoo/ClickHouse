@@ -53,7 +53,7 @@ Stats PredicateStatsCalculator::calculateStatistics(const ActionsDAGPtr & predic
     PredicateNodeVisitor visitor;
     const auto * filter_node = &predicates->findInOutputs(filter_node_name);
     ActionNodeStatistics filter_node_stats = visitor.visit(filter_node, context);
-    statistics.addColumnStatistics(filter_node->result_name, std::make_shared<ColumnStatistics>(0.0, 1.0, 2.0, 1.0));
+    statistics.addColumnStatistics(filter_node->result_name, std::make_shared<ColumnStats>(0.0, 1.0, 2.0, 1.0));
 
     auto & output_nodes = predicates->getOutputs();
     chassert(output_nodes.size() > 0);
@@ -83,7 +83,7 @@ Stats PredicateStatsCalculator::calculateStatistics(const ActionsDAGPtr & predic
             /// Output column contains multi-input node, for example: 'col1 + col2'
             if (context[output_node].input_node_stats.size() > 1)
             {
-                statistics.addColumnStatistics(output_node->result_name, ColumnStatistics::unknown());
+                statistics.addColumnStatistics(output_node->result_name, ColumnStats::unknown());
             }
             else
             {
@@ -346,7 +346,7 @@ ActionNodeStatistics PredicateNodeVisitor::visitIn(const ActionsDAG::Node * node
 }
 
 ActionNodeStatistics PredicateNodeVisitor::calculateBinaryPredicateFunction(
-    const ActionsDAG::Node * node, ColumnStatistics::OP_TYPE op_type, ContextType & context)
+    const ActionsDAG::Node * node, ColumnStats::OP_TYPE op_type, ContextType & context)
 {
     chassert(node->children.size() == 2);
 
@@ -418,32 +418,32 @@ ActionNodeStatistics PredicateNodeVisitor::calculateUnaryPredicateFunction(const
 
 ActionNodeStatistics PredicateNodeVisitor::visitEqual(const ActionsDAG::Node * node, ContextType & context)
 {
-    return calculateBinaryPredicateFunction(node, ColumnStatistics::EQUAL, context);
+    return calculateBinaryPredicateFunction(node, ColumnStats::EQUAL, context);
 }
 
 ActionNodeStatistics PredicateNodeVisitor::visitNotEqual(const ActionsDAG::Node * node, ContextType & context)
 {
-    return calculateBinaryPredicateFunction(node, ColumnStatistics::NOT_EQUAL, context);
+    return calculateBinaryPredicateFunction(node, ColumnStats::NOT_EQUAL, context);
 }
 
 ActionNodeStatistics PredicateNodeVisitor::visitGreater(const ActionsDAG::Node * node, ContextType & context)
 {
-    return calculateBinaryPredicateFunction(node, ColumnStatistics::GREATER, context);
+    return calculateBinaryPredicateFunction(node, ColumnStats::GREATER, context);
 }
 
 ActionNodeStatistics PredicateNodeVisitor::visitGreaterOrEqual(const ActionsDAG::Node * node, ContextType & context)
 {
-    return calculateBinaryPredicateFunction(node, ColumnStatistics::GREATER_OR_EQUAL, context);
+    return calculateBinaryPredicateFunction(node, ColumnStats::GREATER_OR_EQUAL, context);
 }
 
 ActionNodeStatistics PredicateNodeVisitor::visitLess(const ActionsDAG::Node * node, ContextType & context)
 {
-    return calculateBinaryPredicateFunction(node, ColumnStatistics::LESS, context);
+    return calculateBinaryPredicateFunction(node, ColumnStats::LESS, context);
 }
 
 ActionNodeStatistics PredicateNodeVisitor::visitLessOrEqual(const ActionsDAG::Node * node, ContextType & context)
 {
-    return calculateBinaryPredicateFunction(node, ColumnStatistics::LESS_OR_EQUAL, context);
+    return calculateBinaryPredicateFunction(node, ColumnStats::LESS_OR_EQUAL, context);
 }
 
 ActionNodeStatistics PredicateNodeVisitor::visitAlias(const ActionsDAG::Node * node, ContextType & context)

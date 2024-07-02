@@ -48,13 +48,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <QueryCoordination/QueryCoordinationExecutor.h>
-#include <QueryCoordination/Fragments/DistributedFragmentBuilder.h>
-#include <QueryCoordination/Pipelines/PipelinesBuilder.h>
-#include <QueryCoordination/Coordinator.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <QueryCoordination/Exchange/ExchangeManager.h>
-#include <QueryCoordination/fragmentsToPipelines.h>
 
 #if USE_SSL
 #   include <Poco/Net/SecureStreamSocket.h>
@@ -64,9 +58,17 @@
 #include <Core/Protocol.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include "TCPHandler.h"
-#include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
 
 #include <Common/config_version.h>
+
+#include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
+#include <QueryCoordination/Coordinator.h>
+#include <QueryCoordination/QueryCoordinationExecutor.h>
+#include <QueryCoordination/Fragments/DistributedFragmentBuilder.h>
+#include <QueryCoordination/Pipelines/PipelinesBuilder.h>
+#include <QueryCoordination/Exchange/ExchangeManager.h>
+#include <QueryCoordination/fragmentsToPipelines.h>
+
 
 using namespace std::literals;
 using namespace DB;
@@ -1054,7 +1056,7 @@ void TCPHandler::processOrdinaryQueryWithCoordination(std::function<void()> fini
 
             auto callback = [this]()
             {
-                std::scoped_lock lock(task_callback_mutex, fatal_error_mutex);
+                std::scoped_lock lock(task_callback_mutex);
 
                 if (getQueryCancellationStatus() == CancellationStatus::FULLY_CANCELLED)
                     return true;
@@ -2250,7 +2252,7 @@ bool TCPHandler::receiveData(bool scalar)
     /// Read one block from the network and write it down
     Block block = state.block_in->read();
 
-    if (!block && !state.exchange_data_request) // exchange_data_request empty block need send to receiver
+    if (!block)
     {
         state.read_all_data = true;
         return false;
@@ -2261,7 +2263,7 @@ bool TCPHandler::receiveData(bool scalar)
         /// Scalar value
         query_context->addScalar(temporary_id.table_name, block);
     }
-    else if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input && !state.exchange_data_request)
+    else if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input)
     {
         /// Data for external tables
 
@@ -2287,7 +2289,7 @@ bool TCPHandler::receiveData(bool scalar)
         executor.push(block);
         executor.finish();
     }
-    else if (state.need_receive_data_for_input && !state.exchange_data_request)
+    else if (state.need_receive_data_for_input)
     {
         /// 'input' table function.
         state.block_for_input = block;

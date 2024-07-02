@@ -1,27 +1,27 @@
-#include <Optimizer/Statistics/ColumnStatistics.h>
+#include <Optimizer/Statistics/ColumnStats.h>
 #include <Optimizer/Statistics/Utils.h>
 
 namespace DB
 {
 
-ColumnStatisticsPtr ColumnStatistics::unknown()
+ColumnStatsPtr ColumnStats::unknown()
 {
-    auto ret = std::make_shared<ColumnStatistics>();
+    auto ret = std::make_shared<ColumnStats>();
     ret->is_unknown = true;
     return ret;
 }
 
-ColumnStatisticsPtr ColumnStatistics::create(Float64 value)
+ColumnStatsPtr ColumnStats::create(Float64 value)
 {
-    return std::make_shared<ColumnStatistics>(value);
+    return std::make_shared<ColumnStats>(value);
 }
 
-ColumnStatisticsPtr ColumnStatistics::clone()
+ColumnStatsPtr ColumnStats::clone()
 {
-    return std::make_shared<ColumnStatistics>(min_value, max_value, ndv, avg_row_size, data_type, is_unknown, histogram);
+    return std::make_shared<ColumnStats>(min_value, max_value, ndv, avg_row_size, data_type, is_unknown, histogram);
 }
 
-Float64 ColumnStatistics::calculateByValue(OP_TYPE op_type, Float64 value)
+Float64 ColumnStats::calculateByValue(OP_TYPE op_type, Float64 value)
 {
     if (isUnKnown())
         return 0.1; /// TODO add to settings
@@ -31,7 +31,7 @@ Float64 ColumnStatistics::calculateByValue(OP_TYPE op_type, Float64 value)
     return nan ? calculateForNaN(op_type) : calculateForNumber(op_type, value);
 }
 
-Float64 ColumnStatistics::calculateForNaN(OP_TYPE op_type)
+Float64 ColumnStats::calculateForNaN(OP_TYPE op_type)
 {
     Float64 selectivity;
     switch (op_type)
@@ -54,7 +54,7 @@ Float64 ColumnStatistics::calculateForNaN(OP_TYPE op_type)
     return selectivity;
 }
 
-Float64 ColumnStatistics::calculateForNumber(OP_TYPE op_type, Float64 value)
+Float64 ColumnStats::calculateForNumber(OP_TYPE op_type, Float64 value)
 {
     Float64 selectivity;
 
@@ -141,7 +141,7 @@ Float64 ColumnStatistics::calculateForNumber(OP_TYPE op_type, Float64 value)
     return selectivity;
 }
 
-void ColumnStatistics::mergeColumnValueByUnion(ColumnStatisticsPtr other)
+void ColumnStats::mergeColumnValueByUnion(ColumnStatsPtr other)
 {
     if (this->isUnKnown())
         return;
@@ -154,7 +154,7 @@ void ColumnStatistics::mergeColumnValueByUnion(ColumnStatisticsPtr other)
     setMaxValue(std::max(this->getMaxValue(), other->getMaxValue()));
 }
 
-void ColumnStatistics::mergeColumnValueByIntersect(ColumnStatisticsPtr other)
+void ColumnStats::mergeColumnValueByIntersect(ColumnStatsPtr other)
 {
     if (this->isUnKnown())
         return;
@@ -167,7 +167,7 @@ void ColumnStatistics::mergeColumnValueByIntersect(ColumnStatisticsPtr other)
     setMaxValue(std::min(this->getMaxValue(), other->getMaxValue()));
 }
 
-void ColumnStatistics::revertColumnValue()
+void ColumnStats::revertColumnValue()
 {
     if (this->isUnKnown())
         return;
@@ -181,52 +181,52 @@ void ColumnStatistics::revertColumnValue()
     }
 }
 
-bool ColumnStatistics::isUnKnown() const
+bool ColumnStats::isUnKnown() const
 {
     return is_unknown;
 }
 
-Float64 ColumnStatistics::getNdv() const
+Float64 ColumnStats::getNdv() const
 {
     return ndv;
 }
 
-void ColumnStatistics::setNdv(Float64 new_value)
+void ColumnStats::setNdv(Float64 new_value)
 {
     ndv = std::max(1.0, new_value);
 }
 
-Float64 ColumnStatistics::getMinValue() const
+Float64 ColumnStats::getMinValue() const
 {
     return min_value;
 }
 
-void ColumnStatistics::setMinValue(Float64 minValue)
+void ColumnStats::setMinValue(Float64 minValue)
 {
     min_value = std::max(1.0, minValue);
 }
 
-Float64 ColumnStatistics::getMaxValue() const
+Float64 ColumnStats::getMaxValue() const
 {
     return max_value;
 }
 
-void ColumnStatistics::setMaxValue(Float64 maxValue)
+void ColumnStats::setMaxValue(Float64 maxValue)
 {
     max_value = std::max(1.0, maxValue);
 }
 
-Float64 ColumnStatistics::getAvgRowSize() const
+Float64 ColumnStats::getAvgRowSize() const
 {
     return avg_row_size;
 }
 
-void ColumnStatistics::setAvgRowSize(Float64 avgRowSize)
+void ColumnStats::setAvgRowSize(Float64 avgRowSize)
 {
     avg_row_size = std::max(1.0, avgRowSize);
 }
 
-bool ColumnStatistics::inRange(Float64 value)
+bool ColumnStats::inRange(Float64 value)
 {
     if (isNumeric(data_type))
         return value <= max_value && value >= min_value;
@@ -234,12 +234,12 @@ bool ColumnStatistics::inRange(Float64 value)
         return true;
 }
 
-const DataTypePtr & ColumnStatistics::getDataType() const
+const DataTypePtr & ColumnStats::getDataType() const
 {
     return data_type;
 }
 
-void ColumnStatistics::setDataType(const DataTypePtr & dataType)
+void ColumnStats::setDataType(const DataTypePtr & dataType)
 {
     data_type = dataType;
 

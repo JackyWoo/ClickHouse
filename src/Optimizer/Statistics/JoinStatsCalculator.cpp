@@ -85,7 +85,7 @@ void JoinStatsCalculator::Impl::calculateAsofJoin(Stats & statistics)
     statistics.setOutputRowSize(row_count);
 
     for (auto & column : output_columns)
-        statistics.addColumnStatistics(column, ColumnStatistics::unknown());
+        statistics.addColumnStatistics(column, ColumnStats::unknown());
 }
 
 void JoinStatsCalculator::Impl::calculateInnerJoin(Stats & statistics, JoinStrictness strictness)

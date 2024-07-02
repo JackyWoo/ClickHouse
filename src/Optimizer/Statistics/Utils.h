@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Optimizer/Statistics/ColumnStatistics.h>
+#include <Optimizer/Statistics/ColumnStats.h>
 #include <Optimizer/Statistics/Stats.h>
 #include <Parsers/ASTLiteral.h>
 

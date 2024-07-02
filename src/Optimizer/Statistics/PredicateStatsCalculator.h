@@ -39,7 +39,7 @@ public:
     /// non visit functions
 
     ActionNodeStatistics
-    calculateBinaryPredicateFunction(const ActionsDAG::Node * node, ColumnStatistics::OP_TYPE op_type, ContextType & context);
+    calculateBinaryPredicateFunction(const ActionsDAG::Node * node, ColumnStats::OP_TYPE op_type, ContextType & context);
     [[maybe_unused]] ActionNodeStatistics calculateUnaryPredicateFunction(const ActionsDAG::Node * node, ContextType & context);
 
 private:
