@@ -163,7 +163,7 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
                     reason = "get multi-clusters in query";
                     query_coordination_enabled = false;
                 }
-                else if (visitor.clusters[0]->getName().empty()) /// remote() cluster_name is empty // TODO support
+                else if (visitor.clusters.begin()->get()->getName().empty()) /// remote() cluster_name is empty // TODO support
                 {
                     reason = "remote table function";
                     query_coordination_enabled = false;
@@ -171,7 +171,7 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
                 else
                 {
                     query_coordination_enabled = true;
-                    String cluster_name = visitor.clusters[0]->getName();
+                    String cluster_name = visitor.clusters.begin()->get()->getName();
                     context->addQueryCoordinationMetaInfo(cluster_name, visitor.storages, visitor.sharding_keys);
                 }
             }

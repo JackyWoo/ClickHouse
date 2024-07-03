@@ -64,8 +64,6 @@
 #include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
 #include <QueryCoordination/Coordinator.h>
 #include <QueryCoordination/QueryCoordinationExecutor.h>
-#include <QueryCoordination/Fragments/DistributedFragmentBuilder.h>
-#include <QueryCoordination/Pipelines/PipelinesBuilder.h>
 #include <QueryCoordination/Exchange/ExchangeManager.h>
 #include <QueryCoordination/fragmentsToPipelines.h>
 
@@ -2252,7 +2250,7 @@ bool TCPHandler::receiveData(bool scalar)
     /// Read one block from the network and write it down
     Block block = state.block_in->read();
 
-    if (!block)
+    if (!block && !state.exchange_data_request) // exchange_data_request empty block need send to receiver
     {
         state.read_all_data = true;
         return false;
@@ -2263,7 +2261,7 @@ bool TCPHandler::receiveData(bool scalar)
         /// Scalar value
         query_context->addScalar(temporary_id.table_name, block);
     }
-    else if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input)
+    else if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input && !state.exchange_data_request)
     {
         /// Data for external tables
 
@@ -2289,7 +2287,7 @@ bool TCPHandler::receiveData(bool scalar)
         executor.push(block);
         executor.finish();
     }
-    else if (state.need_receive_data_for_input)
+    else if (state.need_receive_data_for_input && !state.exchange_data_request)
     {
         /// 'input' table function.
         state.block_for_input = block;

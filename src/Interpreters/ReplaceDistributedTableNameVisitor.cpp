@@ -85,14 +85,14 @@ void ReplaceDistributedTableNameVisitor::enter(ASTSelectQuery & select_query, Sc
 
     if (auto tables = select_query.tables())
     {
-        auto tables_in_select = tables->as<ASTTablesInSelectQuery>();
+        auto *tables_in_select = tables->as<ASTTablesInSelectQuery>();
         for (auto & table_ele_ast : tables_in_select->children)
         {
-            if (auto table_ele = table_ele_ast->as<ASTTablesInSelectQueryElement>())
+            if (auto *table_ele = table_ele_ast->as<ASTTablesInSelectQueryElement>())
             {
                 if (table_ele->table_expression)
                 {
-                    auto table_expr = table_ele->table_expression->as<ASTTableExpression>();
+                    auto *table_expr = table_ele->table_expression->as<ASTTableExpression>();
 
                     if (table_expr->database_and_table_name)
                     {
@@ -137,22 +137,25 @@ ReplaceDistributedTableNameVisitor::enter(ASTFunction & table_function, ASTPtr &
     auto local_table_ident = std::make_shared<ASTTableIdentifier>(database_name, table_name);
     auto local_table = local_table_ident->getTableId();
 
-    storages.emplace_back(local_table);
-    clusters.emplace_back(storage_distributed->getCluster());
-
-    if (auto sharding_key = storage_distributed->getShardingKey())
+    if (std::find(storages.begin(), storages.end(), local_table) == storages.end())
     {
-        WriteBufferFromOwnString write_buffer;
-        IAST::FormatSettings settings(write_buffer, true, false, true);
-        sharding_key->format(settings);
-        sharding_keys.emplace_back(write_buffer.str());
-    }
-    else
-    {
-        sharding_keys.emplace_back();
-    }
+        storages.emplace_back(local_table);
+        clusters.emplace(storage_distributed->getCluster());
 
-    has_distributed_table = true;
+        if (auto sharding_key = storage_distributed->getShardingKey())
+        {
+            WriteBufferFromOwnString write_buffer;
+            IAST::FormatSettings settings(write_buffer, true, false, true);
+            sharding_key->format(settings);
+            sharding_keys.emplace_back(write_buffer.str());
+        }
+        else
+        {
+            sharding_keys.emplace_back();
+        }
+
+        has_distributed_table = true;
+    }
 
     return local_table_ident;
 }
@@ -196,7 +199,7 @@ void ReplaceDistributedTableNameVisitor::enter(ASTTableIdentifier & table_ident,
         if (std::find(storages.begin(), storages.end(), local_table) == storages.end())
         {
             storages.emplace_back(local_table);
-            clusters.emplace_back(distributed_table->getCluster());
+            clusters.emplace(distributed_table->getCluster());
 
             if (auto sharding_key = distributed_table->getShardingKey())
             {

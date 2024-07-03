@@ -74,7 +74,7 @@ public:
     /// Storage list for query
     std::vector<StorageID> storages;
     /// Cluster list for storages
-    std::vector<ClusterPtr> clusters;
+    std::set<ClusterPtr> clusters;
     /// Sharding key columns for storages
     std::vector<String> sharding_keys;
 
