@@ -50,8 +50,7 @@ BlockIO InterpreterAnalyzeQuery::executeAnalyzeTable()
         cloned_analyze_query->cluster = distributed_storage->getCluster()->getName();
 
         /// Replace distributed table to local table
-        if (database != distributed_storage->getRemoteDatabaseName())
-            cloned_analyze_query->database = std::make_shared<ASTIdentifier>(distributed_storage->getRemoteDatabaseName());
+        cloned_analyze_query->database = std::make_shared<ASTIdentifier>(database);
         cloned_analyze_query->table = std::make_shared<ASTIdentifier>(distributed_storage->getRemoteTableName());
 
         DDLQueryOnClusterParams params;
