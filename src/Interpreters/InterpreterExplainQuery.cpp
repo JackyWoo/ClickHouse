@@ -1,27 +1,26 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterExplainQuery.h>
 
+#include <QueryPipeline/BlockIO.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
-#include <Formats/FormatFactory.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/TableOverrideUtils.h>
+#include <Interpreters/MergeTreeTransaction.h>
+#include <Formats/FormatFactory.h>
+#include <Parsers/DumpASTNode.h>
+#include <Parsers/queryToString.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/DumpASTNode.h>
-#include <Parsers/queryToString.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
-#include <QueryPipeline/BlockIO.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include "InterpreterSelectQueryCoordination.h"
 
 #include <Storages/StorageView.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -30,12 +29,18 @@
 #include <QueryPipeline/printPipeline.h>
 
 #include <Common/JSONBuilder.h>
+#include <Core/Settings.h>
 
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_statistics_optimize;
+}
 
 namespace ErrorCodes
 {
@@ -44,6 +49,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -69,7 +75,7 @@ namespace
         static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
         {
             /// we need to read statistic when `allow_statistics_optimize` is enabled.
-            bool only_analyze = !data.getContext()->getSettings().allow_statistics_optimize;
+            bool only_analyze = !data.getContext()->getSettingsRef()[Setting::allow_statistics_optimize];
             InterpreterSelectQuery interpreter(
                 node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze(only_analyze).modify());
 
@@ -113,16 +119,14 @@ Block InterpreterExplainQuery::getSampleBlock(const ASTExplainQuery::ExplainKind
             {cols[4].type->createColumn(), cols[4].type, cols[4].name},
         });
     }
-    else
-    {
-        Block res;
-        ColumnWithTypeAndName col;
-        col.name = "explain";
-        col.type = std::make_shared<DataTypeString>();
-        col.column = col.type->createColumn();
-        res.insert(col);
-        return res;
-    }
+
+    Block res;
+    ColumnWithTypeAndName col;
+    col.name = "explain";
+    col.type = std::make_shared<DataTypeString>();
+    col.column = col.type->createColumn();
+    res.insert(col);
+    return res;
 }
 
 /// Split str by line feed and write as separate row to ColumnString.
@@ -171,6 +175,7 @@ struct QueryASTSettings
 struct QueryTreeSettings
 {
     bool run_passes = true;
+    bool dump_tree = true;
     bool dump_passes = false;
     bool dump_ast = false;
     Int64 passes = -1;
@@ -180,6 +185,7 @@ struct QueryTreeSettings
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
     {
         {"run_passes", run_passes},
+        {"dump_tree", dump_tree},
         {"dump_passes", dump_passes},
         {"dump_ast", dump_ast}
     };
@@ -209,28 +215,6 @@ struct QueryPlanSettings
             {"optimize", optimize},
             {"json", json},
             {"sorting", query_plan_options.sorting},
-            {"statistics", query_plan_options.statistics},
-            {"cost", query_plan_options.cost},
-    };
-
-    std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
-};
-
-/// Distributed query plan settings
-struct FragmentSettings
-{
-    Fragment::ExplainFragmentOptions fragment_options;
-
-    constexpr static char name[] = "FRAGMENT";
-
-    std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
-    {
-            {"header", fragment_options.header},
-            {"description", fragment_options.description},
-            {"actions", fragment_options.actions},
-            {"indexes", fragment_options.indexes},
-            {"sorting", fragment_options.sorting},
-            {"host", fragment_options.host},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -351,7 +335,7 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
 
         if (settings.hasBooleanSetting(change.name))
         {
-            auto value = change.value.get<UInt64>();
+            auto value = change.value.safeGet<UInt64>();
             if (value > 1)
                 throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for setting \"{}\". "
                                 "Expected boolean type", value, change.name);
@@ -360,7 +344,7 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
         }
         else
         {
-            auto value = change.value.get<UInt64>();
+            auto value = change.value.safeGet<UInt64>();
             settings.setIntegerSetting(change.name, value);
         }
     }
@@ -413,7 +397,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         }
         case ASTExplainQuery::QueryTree:
         {
-            if (!getContext()->getSettingsRef().allow_experimental_analyzer)
+            if (!getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "EXPLAIN QUERY TREE is only supported with a new analyzer. Set allow_experimental_analyzer = 1.");
 
@@ -421,7 +405,11 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN QUERY TREE query");
 
             auto settings = checkAndGetSettings<QueryTreeSettings>(ast.getSettings());
+            if (!settings.dump_tree && !settings.dump_ast)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either 'dump_tree' or 'dump_ast' must be set for EXPLAIN QUERY TREE query");
+
             auto query_tree = buildQueryTree(ast.getExplainedQuery(), getContext());
+            bool need_newline = false;
 
             if (settings.run_passes)
             {
@@ -433,23 +421,26 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 if (settings.dump_passes)
                 {
                     query_tree_pass_manager.dump(buf, pass_index);
-                    if (pass_index > 0)
-                        buf << '\n';
+                    need_newline = true;
                 }
 
                 query_tree_pass_manager.run(query_tree, pass_index);
+            }
+
+            if (settings.dump_tree)
+            {
+                if (need_newline)
+                    buf << "\n\n";
 
                 query_tree->dumpTree(buf);
-            }
-            else
-            {
-                query_tree->dumpTree(buf);
+                need_newline = true;
             }
 
             if (settings.dump_ast)
             {
-                buf << '\n';
-                buf << '\n';
+                if (need_newline)
+                    buf << "\n\n";
+
                 query_tree->toAST()->format(IAST::FormatSettings(buf, false));
             }
 
@@ -473,7 +464,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     single_line = true;
                 break;
             }
-            if (getContext()->getSettingsRef().allow_experimental_analyzer)
+            if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), options);
                 context = interpreter.getContext();
@@ -532,7 +523,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 QueryPlan plan;
                 ContextPtr context;
 
-                if (getContext()->getSettingsRef().allow_experimental_analyzer)
+                if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
                 {
                     InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), options);
                     context = interpreter.getContext();
@@ -568,7 +559,13 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             }
             else if (dynamic_cast<const ASTInsertQuery *>(ast.getExplainedQuery().get()))
             {
-                InterpreterInsertQuery insert(ast.getExplainedQuery(), getContext());
+                InterpreterInsertQuery insert(
+                    ast.getExplainedQuery(),
+                    getContext(),
+                    /* allow_materialized */ false,
+                    /* no_squash */ false,
+                    /* no_destination */ false,
+                    /* async_isnert */ false);
                 auto io = insert.execute();
                 printPipeline(io.pipeline.getProcessors(), buf);
             }
@@ -585,7 +582,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             QueryPlan plan;
             ContextPtr context = getContext();
 
-            if (context->getSettingsRef().allow_experimental_analyzer)
+            if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
                 context = interpreter.getContext();

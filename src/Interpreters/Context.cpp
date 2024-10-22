@@ -5,10 +5,12 @@
 #include <Poco/UUID.h>
 #include <Poco/Util/Application.h>
 #include <Common/AsyncLoader.h>
+#include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/PoolId.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/Macros.h>
 #include <Common/EventNotifier.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/Throttler.h>
@@ -19,8 +21,10 @@
 #include <Common/SharedLockGuard.h>
 #include <Common/PageCache.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/isLocalAddress.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Databases/IDatabase.h>
 #include <Server/ServerType.h>
@@ -50,7 +54,6 @@
 #include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
-#include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
@@ -58,6 +61,7 @@
 #include <Access/EnabledRowPolicies.h>
 #include <Access/QuotaUsage.h>
 #include <Access/User.h>
+#include <Access/Role.h>
 #include <Access/SettingsProfile.h>
 #include <Access/SettingsProfilesInfo.h>
 #include <Access/SettingsConstraintsAndProfileIDs.h>
@@ -98,6 +102,7 @@
 #include <Common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
+#include <Interpreters/SystemLog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -121,7 +126,6 @@
 #include <QueryCoordination/Coordinator.h>
 #include <Optimizer/Statistics/IStatisticsStorage.h>
 #include <Optimizer/Statistics/CachedStatisticsStorage.h>
-
 
 
 namespace fs = std::filesystem;
@@ -627,7 +631,7 @@ struct ContextSharedPart : boost::noncopyable
         /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
           *  Note that part changes at shutdown won't be logged to part log.
           */
-        SHUTDOWN(log, "system logs", system_logs, shutdown());
+        SHUTDOWN(log, "system logs", system_logs, flushAndShutdown());
 
         LOG_TRACE(log, "Shutting down database catalog");
         DatabaseCatalog::shutdown();
@@ -790,31 +794,31 @@ struct ContextSharedPart : boost::noncopyable
 
     void configureServerWideThrottling()
     {
-        if (auto bandwidth = server_settings.max_replicated_fetches_network_bandwidth_for_server)
+        if (auto bandwidth = server_settings[ServerSetting::max_replicated_fetches_network_bandwidth_for_server])
             replicated_fetches_throttler = std::make_shared<Throttler>(bandwidth);
 
-        if (auto bandwidth = server_settings.max_replicated_sends_network_bandwidth_for_server)
+        if (auto bandwidth = server_settings[ServerSetting::max_replicated_sends_network_bandwidth_for_server])
             replicated_sends_throttler = std::make_shared<Throttler>(bandwidth);
 
-        if (auto bandwidth = server_settings.max_remote_read_network_bandwidth_for_server)
+        if (auto bandwidth = server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server])
             remote_read_throttler = std::make_shared<Throttler>(bandwidth);
 
-        if (auto bandwidth = server_settings.max_remote_write_network_bandwidth_for_server)
+        if (auto bandwidth = server_settings[ServerSetting::max_remote_write_network_bandwidth_for_server])
             remote_write_throttler = std::make_shared<Throttler>(bandwidth);
 
-        if (auto bandwidth = server_settings.max_local_read_bandwidth_for_server)
+        if (auto bandwidth = server_settings[ServerSetting::max_local_read_bandwidth_for_server])
             local_read_throttler = std::make_shared<Throttler>(bandwidth);
 
-        if (auto bandwidth = server_settings.max_local_write_bandwidth_for_server)
+        if (auto bandwidth = server_settings[ServerSetting::max_local_write_bandwidth_for_server])
             local_write_throttler = std::make_shared<Throttler>(bandwidth);
 
-        if (auto bandwidth = server_settings.max_backup_bandwidth_for_server)
+        if (auto bandwidth = server_settings[ServerSetting::max_backup_bandwidth_for_server])
             backups_server_throttler = std::make_shared<Throttler>(bandwidth);
 
-        if (auto bandwidth = server_settings.max_mutations_bandwidth_for_server)
+        if (auto bandwidth = server_settings[ServerSetting::max_mutations_bandwidth_for_server])
             mutations_throttler = std::make_shared<Throttler>(bandwidth);
 
-        if (auto bandwidth = server_settings.max_merges_bandwidth_for_server)
+        if (auto bandwidth = server_settings[ServerSetting::max_merges_bandwidth_for_server])
             merges_throttler = std::make_shared<Throttler>(bandwidth);
     }
 };
@@ -837,8 +841,75 @@ void ContextSharedMutex::lockSharedImpl()
     ProfileEvents::increment(ProfileEvents::ContextLockWaitMicroseconds, watch.elapsedMicroseconds());
 }
 
-ContextData::ContextData() = default;
-ContextData::ContextData(const ContextData &) = default;
+ContextData::ContextData()
+{
+    settings = std::make_unique<Settings>();
+}
+ContextData::ContextData(const ContextData &o) :
+    shared(o.shared),
+    client_info(o.client_info),
+    external_tables_initializer_callback(o.external_tables_initializer_callback),
+    input_initializer_callback(o.input_initializer_callback),
+    input_blocks_reader(o.input_blocks_reader),
+    user_id(o.user_id),
+    current_roles(o.current_roles),
+    settings_constraints_and_current_profiles(o.settings_constraints_and_current_profiles),
+    access(o.access),
+    need_recalculate_access(o.need_recalculate_access),
+    current_database(o.current_database),
+    settings(std::make_unique<Settings>(*o.settings)),
+    progress_callback(o.progress_callback),
+    file_progress_callback(o.file_progress_callback),
+    process_list_elem(o.process_list_elem),
+    has_process_list_elem(o.has_process_list_elem),
+    insertion_table_info(o.insertion_table_info),
+    is_distributed(o.is_distributed),
+    default_format(o.default_format),
+    insert_format(o.insert_format),
+    external_tables_mapping(o.external_tables_mapping),
+    scalars(o.scalars),
+    special_scalars(o.special_scalars),
+    next_task_callback(o.next_task_callback),
+    merge_tree_read_task_callback(o.merge_tree_read_task_callback),
+    merge_tree_all_ranges_callback(o.merge_tree_all_ranges_callback),
+    parallel_replicas_group_uuid(o.parallel_replicas_group_uuid),
+    client_protocol_version(o.client_protocol_version),
+    query_access_info(std::make_shared<QueryAccessInfo>(*o.query_access_info)),
+    query_factories_info(o.query_factories_info),
+    query_privileges_info(o.query_privileges_info),
+    async_read_counters(o.async_read_counters),
+    view_source(o.view_source),
+    table_function_results(o.table_function_results),
+    query_context(o.query_context),
+    session_context(o.session_context),
+    global_context(o.global_context),
+    buffer_context(o.buffer_context),
+    is_internal_query(o.is_internal_query),
+    temp_data_on_disk(o.temp_data_on_disk),
+    classifier(o.classifier),
+    prepared_sets_cache(o.prepared_sets_cache),
+    offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
+    kitchen_sink(o.kitchen_sink),
+    part_uuids(o.part_uuids),
+    ignored_part_uuids(o.ignored_part_uuids),
+    query_parameters(o.query_parameters),
+    host_context(o.host_context),
+    metadata_transaction(o.metadata_transaction),
+    merge_tree_transaction(o.merge_tree_transaction),
+    merge_tree_transaction_holder(o.merge_tree_transaction_holder),
+    remote_read_query_throttler(o.remote_read_query_throttler),
+    remote_write_query_throttler(o.remote_write_query_throttler),
+    local_read_query_throttler(o.local_read_query_throttler),
+    local_write_query_throttler(o.local_write_query_throttler),
+    backups_query_throttler(o.backups_query_throttler)
+{
+}
+
+void ContextData::resetSharedContext()
+{
+    std::lock_guard<std::mutex> lock(mutex_shared_context);
+    shared = nullptr;
+}
 
 Context::Context() = default;
 Context::Context(const Context & rhs) : ContextData(rhs), std::enable_shared_from_this<Context>(rhs) {}
@@ -861,14 +932,6 @@ ContextMutablePtr Context::createGlobal(ContextSharedPart * shared_part)
     return res;
 }
 
-void Context::initGlobal()
-{
-    assert(!global_context_instance);
-    global_context_instance = shared_from_this();
-    DatabaseCatalog::init(shared_from_this());
-    EventNotifier::init();
-}
-
 SharedContextHolder Context::createShared()
 {
     return SharedContextHolder(std::make_unique<ContextSharedPart>());
@@ -878,7 +941,6 @@ ContextMutablePtr Context::createCopy(const ContextPtr & other)
 {
     SharedLockGuard lock(other->mutex);
     auto new_context = std::shared_ptr<Context>(new Context(*other));
-    new_context->query_access_info = std::make_shared<QueryAccessInfo>(*other->query_access_info);
     return new_context;
 }
 
@@ -983,12 +1045,7 @@ Strings Context::getWarnings() const
             common_warnings.emplace_back(fmt::format("The number of active parts is more than {}", shared->max_part_num_to_warn));
     }
     /// Make setting's name ordered
-    std::set<String> obsolete_settings;
-    for (const auto & setting : settings)
-    {
-        if (setting.isValueChanged() && setting.isObsolete())
-            obsolete_settings.emplace(setting.getName());
-    }
+    auto obsolete_settings = settings->getChangedAndObsoleteNames();
 
     if (!obsolete_settings.empty())
     {
@@ -999,7 +1056,9 @@ Strings Context::getWarnings() const
         for (const auto & setting : obsolete_settings)
         {
             res += first ? "" : ", ";
-            res += "'" + setting + "'";
+            res += "'";
+            res += setting;
+            res += "'";
             first = false;
         }
         res = res + "]" + (single_element ? " is" : " are")
@@ -1070,7 +1129,7 @@ void Context::setFilesystemCachesPath(const String & path)
 {
     std::lock_guard lock(shared->mutex);
 
-    if (!fs::path(path).is_absolute())
+    if (getApplicationType() != ApplicationType::LOCAL && !fs::path(path).is_absolute())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Filesystem caches path must be absolute: {}", path);
 
     shared->filesystem_caches_path = path;
@@ -1318,7 +1377,7 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
-void Context::setUser(const UUID & user_id_, const std::optional<const std::vector<UUID>> & current_roles_)
+void Context::setUser(const UUID & user_id_)
 {
     /// Prepare lists of user's profiles, constraints, settings, roles.
     /// NOTE: AccessControl::read<User>() and other AccessControl's functions may require some IO work,
@@ -1327,8 +1386,8 @@ void Context::setUser(const UUID & user_id_, const std::optional<const std::vect
     auto & access_control = getAccessControl();
     auto user = access_control.read<User>(user_id_);
 
-    auto new_current_roles = current_roles_ ? user->granted_roles.findGranted(*current_roles_) : user->granted_roles.findGranted(user->default_roles);
-    auto enabled_roles = access_control.getEnabledRolesInfo(new_current_roles, {});
+    auto default_roles = user->granted_roles.findGranted(user->default_roles);
+    auto enabled_roles = access_control.getEnabledRolesInfo(default_roles, {});
     auto enabled_profiles = access_control.getEnabledSettingsInfo(user_id_, user->settings, enabled_roles->enabled_roles, enabled_roles->settings_from_enabled_roles);
     const auto & database = user->default_database;
 
@@ -1342,7 +1401,7 @@ void Context::setUser(const UUID & user_id_, const std::optional<const std::vect
     /// so we shouldn't check constraints here.
     setCurrentProfilesWithLock(*enabled_profiles, /* check_constraints= */ false, lock);
 
-    setCurrentRolesWithLock(new_current_roles, lock);
+    setCurrentRolesWithLock(default_roles, lock);
 
     /// It's optional to specify the DEFAULT DATABASE in the user's definition.
     if (!database.empty())
@@ -1399,25 +1458,66 @@ const QueryCoordinationMetaInfo & Context::getQueryCoordinationMetaInfo() const
     return query_coordination_meta;
 }
 
-void Context::setCurrentRolesWithLock(const std::vector<UUID> & current_roles_, const std::lock_guard<ContextSharedMutex> &)
+void Context::setCurrentRolesWithLock(const std::vector<UUID> & new_current_roles, const std::lock_guard<ContextSharedMutex> &)
 {
-    if (current_roles_.empty())
+    if (new_current_roles.empty())
         current_roles = nullptr;
     else
-        current_roles = std::make_shared<std::vector<UUID>>(current_roles_);
+        current_roles = std::make_shared<std::vector<UUID>>(new_current_roles);
     need_recalculate_access = true;
 }
 
-void Context::setCurrentRoles(const std::vector<UUID> & current_roles_)
+void Context::setCurrentRolesImpl(const std::vector<UUID> & new_current_roles, bool throw_if_not_granted, bool skip_if_not_granted, const std::shared_ptr<const User> & user)
 {
-    std::lock_guard lock(mutex);
-    setCurrentRolesWithLock(current_roles_, lock);
+    if (skip_if_not_granted)
+    {
+        auto filtered_role_ids = user->granted_roles.findGranted(new_current_roles);
+        std::lock_guard lock{mutex};
+        setCurrentRolesWithLock(filtered_role_ids, lock);
+        return;
+    }
+    if (throw_if_not_granted)
+    {
+        for (const auto & role_id : new_current_roles)
+        {
+            if (!user->granted_roles.isGranted(role_id))
+            {
+                auto role_name = getAccessControl().tryReadName(role_id);
+                throw Exception(ErrorCodes::SET_NON_GRANTED_ROLE, "Role {} should be granted to set as a current", role_name.value_or(toString(role_id)));
+            }
+        }
+    }
+    std::lock_guard lock2{mutex};
+    setCurrentRolesWithLock(new_current_roles, lock2);
+}
+
+void Context::setCurrentRoles(const std::vector<UUID> & new_current_roles, bool check_grants)
+{
+    setCurrentRolesImpl(new_current_roles, /* throw_if_not_granted= */ check_grants, /* skip_if_not_granted= */ !check_grants, getUser());
+}
+
+void Context::setCurrentRoles(const RolesOrUsersSet & new_current_roles, bool check_grants)
+{
+    if (new_current_roles.all)
+    {
+        auto user = getUser();
+        setCurrentRolesImpl(user->granted_roles.findGranted(new_current_roles), /* throw_if_not_granted= */ false, /* skip_if_not_granted= */ false, user);
+    }
+    else
+    {
+        setCurrentRoles(new_current_roles.getMatchingIDs(), check_grants);
+    }
+}
+
+void Context::setCurrentRoles(const Strings & new_current_roles, bool check_grants)
+{
+    setCurrentRoles(getAccessControl().getIDs<Role>(new_current_roles), check_grants);
 }
 
 void Context::setCurrentRolesDefault()
 {
     auto user = getUser();
-    setCurrentRoles(user->granted_roles.findGranted(user->default_roles));
+    setCurrentRolesImpl(user->granted_roles.findGranted(user->default_roles), /* throw_if_not_granted= */ false, /* skip_if_not_granted= */ false, user);
 }
 
 std::vector<UUID> Context::getCurrentRoles() const
