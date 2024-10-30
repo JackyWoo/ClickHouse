@@ -15,6 +15,7 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/CopyTransform.h>
@@ -23,6 +24,7 @@
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
@@ -30,6 +32,17 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace Setting
+{
+extern const SettingsBool distributed_aggregation_memory_efficient;
+extern const SettingsBool enable_memory_bound_merging_of_aggregation_results;
+extern const SettingsUInt64 max_threads;
+extern const SettingsUInt64 max_block_size;
+extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
+extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
+extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
 }
 
 static bool memoryBoundMergingWillBeUsed(
@@ -575,8 +588,8 @@ void AggregatingStep::enforceTwoLevelAgg()
 
 std::shared_ptr<AggregatingStep> AggregatingStep::makePreliminaryAgg(const Settings & settings) const
 {
-    std::shared_ptr<AggregatingStep> preliminary_agg = std::make_shared<AggregatingStep>(
-        input_streams.front(),
+    auto preliminary_agg = std::make_shared<AggregatingStep>(
+        input_headers.front(),
         params,
         grouping_sets_params,
         false,
@@ -588,16 +601,18 @@ std::shared_ptr<AggregatingStep> AggregatingStep::makePreliminaryAgg(const Setti
         group_by_use_nulls,
         sort_description_for_merging,
         group_by_sort_description,
-        (settings.distributed_aggregation_memory_efficient || settings.enable_memory_bound_merging_of_aggregation_results),
+        (settings[Setting::distributed_aggregation_memory_efficient] || settings[Setting::enable_memory_bound_merging_of_aggregation_results]),
         memory_bound_merging_of_aggregation_results_enabled,
         explicit_sorting_required_for_aggregation_in_order);
 
-    preliminary_agg->is_preliminary_agg = true;
+    preliminary_agg->phase = Preliminary;
     return preliminary_agg;
 }
 
-std::shared_ptr<MergingAggregatedStep> AggregatingStep::makeMergingAggregatedStep(const DataStream & input_stream_, const Settings & settings) const
+std::shared_ptr<MergingAggregatedStep> AggregatingStep::makeMergingAggregatedStep(const Header & input_header_, const Settings & settings) const
 {
+    /// copy-past from Planner::addMergingAggregatedStep
+
     auto keys = params.keys;
     if (/*has_grouping_sets*/ !grouping_sets_params.empty())
         keys.insert(keys.begin(), "__grouping_set");
@@ -621,23 +636,23 @@ std::shared_ptr<MergingAggregatedStep> AggregatingStep::makeMergingAggregatedSte
         keys,
         params.aggregates,
         params.overflow_row,
-        settings.max_threads,
-        settings.max_block_size,
-        settings.min_hit_rate_to_use_consecutive_keys_optimization);
+        settings[Setting::max_threads],
+        settings[Setting::max_block_size],
+        settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization]);
 
-    std::shared_ptr<MergingAggregatedStep> merging_step = std::make_shared<MergingAggregatedStep>(
-        input_stream_,
+    auto merging_step = std::make_shared<MergingAggregatedStep>(
+        input_header_,
         params_,
+        grouping_sets_params,
         final,
         /// Grouping sets don't work with distributed_aggregation_memory_efficient enabled (#43989)
-        settings.distributed_aggregation_memory_efficient && grouping_sets_params.empty(),
-        settings.max_threads,
-        settings.aggregation_memory_efficient_merge_threads,
-        (settings.distributed_aggregation_memory_efficient || settings.enable_memory_bound_merging_of_aggregation_results),
-        settings.max_block_size,
-        settings.aggregation_in_order_max_block_bytes,
-        group_by_sort_description,
-        settings.enable_memory_bound_merging_of_aggregation_results);
+        settings[Setting::distributed_aggregation_memory_efficient] && grouping_sets_params.empty(),
+        settings[Setting::max_threads],
+        settings[Setting::aggregation_memory_efficient_merge_threads],
+        (settings[Setting::distributed_aggregation_memory_efficient] || settings[Setting::enable_memory_bound_merging_of_aggregation_results]),
+        settings[Setting::max_block_size],
+        settings[Setting::aggregation_in_order_max_block_bytes],
+        settings[Setting::enable_memory_bound_merging_of_aggregation_results]);
 
     return merging_step;
 }

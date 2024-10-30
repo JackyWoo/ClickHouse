@@ -1,22 +1,29 @@
+#include <Optimizer/Tasks/OptimizeInputs.h>
+
 #include <Optimizer/Cost/CostCalculator.h>
 #include <Optimizer/DeriveOutputProp.h>
 #include <Optimizer/Group.h>
 #include <Optimizer/GroupNode.h>
 #include <Optimizer/Memo.h>
 #include <Optimizer/Tasks/OptimizeGroup.h>
-#include <Optimizer/Tasks/OptimizeInputs.h>
 #include <Optimizer/Tasks/OptimizeTask.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 
 
 namespace DB
 {
 
+namespace Setting
+{
+extern const SettingsUInt64 max_block_size;
+}
+
 OptimizeInputs::OptimizeInputs(GroupNodePtr group_node_, TaskContextPtr task_context_, std::unique_ptr<Frame> frame_)
     : OptimizeTask(task_context_), group_node(group_node_), frame(std::move(frame_))
 {
-    auto & group = task_context->getCurrentGroup();
+    const auto & group = task_context->getCurrentGroup();
     log = &Poco::Logger::get(
         fmt::format("OptimizeInputs-#{}#{}({})", group.getId(), group_node->getId(), group_node->getStep()->getName()));
 }
@@ -39,18 +46,24 @@ void OptimizeInputs::execute()
     for (auto & child_group : group_node->getChildren())
         children_statistics.emplace_back(child_group->getStatistics());
 
-    /// If frame is null, means it is the first time optimize node.
+    /// If frame is null, means it is the first time optimize the node.
     if (!frame)
+    {
         frame = std::make_unique<Frame>(group_node, task_context->getQueryContext());
+        LOG_TRACE(log, "Derived required child properties {}", PhysicalProperty::toString(frame->alternative_child_props));
+    }
+
+    /// TODO we do not calculate source step here.
 
     /// Each alternative children properties is actually a child problem.
-    for (; frame->prop_idx < static_cast<Int32>(frame->alternative_child_prop.size()); ++frame->prop_idx)
+    for (; frame->prop_idx < static_cast<Int32>(frame->alternative_child_props.size()); ++frame->prop_idx)
     {
-        auto & required_child_props = frame->alternative_child_prop[frame->prop_idx];
+        auto & required_child_props = frame->alternative_child_props[frame->prop_idx];
 
         if (frame->newAlternativeCalc())
         {
-            LOG_TRACE(log, "Evaluate a new alternative children properties {}", toString(required_child_props));
+            LOG_TRACE(log, "Evaluate a new alternative children properties {}", PhysicalProperty::toString(required_child_props));
+            /// Calculate cost by required_child_props is not a good way, but we shuold calculate it before optimie children.
             CostCalculator cost_calc(group.getStatistics(), task_context, children_statistics, required_child_props);
             frame->local_cost = group_node->accept(cost_calc);
             frame->total_cost = frame->local_cost;
@@ -63,7 +76,7 @@ void OptimizeInputs::execute()
             auto required_child_prop = required_child_props[frame->child_idx];
             auto & child_group = *child_groups[frame->child_idx];
 
-            auto best_node = child_group.getSatisfiedBestGroupNode(required_child_prop);
+            auto best_node = child_group.tryGetBest(required_child_prop);
             if (!best_node) /// TODO add evaluated flag to GroupNode to identify whether it has no solution or is not evaluated
             {
                 if (frame->pre_child_idx >= frame->child_idx)
@@ -91,7 +104,7 @@ void OptimizeInputs::execute()
                         log,
                         "Upper bound cost of child group {} is {}, which is lower than 0, which means it will have no solution",
                         child_group.getId(),
-                        child_upper_bound_cost.get());
+                        child_upper_bound_cost.get());// TODO return;
 
                 /// Push current task frame to the task stack.
                 pushTask(clone());
@@ -102,13 +115,14 @@ void OptimizeInputs::execute()
                 pushTask(std::make_unique<OptimizeGroup>(child_task_context));
                 return;
             }
-            frame->total_cost += best_node->second.cost;
 
-            if (frame->total_cost >= task_context->getUpperBoundCost()) /// this problem has no solution
+            frame->total_cost += best_node->second.cost;
+            if (frame->total_cost >= task_context->getUpperBoundCost())
             {
+                /// one of child problems has bigger cost, this alternative plan is not the best
                 LOG_INFO(
                     log,
-                    "Total cost {} is large than the group upper bound {}, it has no solution",
+                    "Total cost {} is large than the group upper bound {}, it is not the best",
                     frame->total_cost.get(),
                     task_context->getUpperBoundCost().get());
                 break;
@@ -117,14 +131,14 @@ void OptimizeInputs::execute()
             frame->actual_children_prop.emplace_back(best_node->first);
         }
 
-        /// All child problem has solution
+        /// All child problem has solution and this is the best plan
         if (frame->child_idx == static_cast<Int32>(group_node->getChildren().size()))
         {
             /// Derive output prop by required_prop and children_prop
-            DeriveOutputProp output_prop_visitor(group_node, required_prop, frame->actual_children_prop, task_context->getQueryContext());
+            DeriveOutputProp output_prop_visitor(required_prop, frame->actual_children_prop, task_context->getQueryContext());
             auto output_prop = group_node->accept(output_prop_visitor);
 
-            LOG_TRACE(log, "Derived output properties {}", output_prop.toString());
+            LOG_TRACE(log, "Derived output property {}", output_prop.toString());
 
             auto child_cost = frame->total_cost - frame->local_cost;
             if (group_node->updateBestChild(output_prop, frame->actual_children_prop, child_cost))
@@ -133,11 +147,11 @@ void OptimizeInputs::execute()
                     log,
                     "GroupNode update best for property {} to {}, children cost: {}",
                     output_prop.toString(),
-                    toString(frame->actual_children_prop),
+                    PhysicalProperty::toString(frame->actual_children_prop),
                     child_cost.toString());
             }
 
-            if (group.updatePropBestNode(output_prop, group_node, frame->total_cost))
+            if (group.updateBest(output_prop, group_node, frame->total_cost))
             {
                 LOG_TRACE(
                     log,
@@ -152,12 +166,13 @@ void OptimizeInputs::execute()
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Sort property not satisfied, output sort prop {}, required sort prop {}",
-                    output_prop.sort_prop.toString(),
-                    required_prop.sort_prop.toString());
+                    output_prop.sorting.toString(),
+                    required_prop.sorting.toString());
 
             if (!output_prop.satisfyDistribution(required_prop))
             {
                 /// Use two-level-hash algorithm if distribution is hash and distributed_by_bucket_num is true.
+                /// TODO not all keys support two-level-hash algorithm
                 enforceTwoLevelAggIfNeed(required_prop);
                 /// Enforce exchange node
                 frame->total_cost = enforceGroupNode(required_prop, output_prop);
@@ -172,14 +187,13 @@ void OptimizeInputs::execute()
     }
 }
 
-
-void OptimizeInputs::enforceTwoLevelAggIfNeed(const PhysicalProperties & required_prop)
+void OptimizeInputs::enforceTwoLevelAggIfNeed(const PhysicalProperty & required_prop)
 {
     if (!(required_prop.distribution.type == Distribution::Type::Hashed && required_prop.distribution.distributed_by_bucket_num))
         return;
 
     auto * aggregate_step = typeid_cast<AggregatingStep *>(group_node->getStep().get());
-    if (!aggregate_step || !aggregate_step->isPreliminaryAgg())
+    if (!aggregate_step || !aggregate_step->isPreliminary())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Required distribution by bucket num, but is not preliminary AggregatingStep");
 
     /// Distribution type is Hashed and use distributed_by_bucket_num need enforce two level aggregate.
@@ -188,82 +202,85 @@ void OptimizeInputs::enforceTwoLevelAggIfNeed(const PhysicalProperties & require
     aggregate_step->enforceTwoLevelAgg();
 }
 
-Cost OptimizeInputs::enforceGroupNode(const PhysicalProperties & required_prop, const PhysicalProperties & output_prop)
+Cost OptimizeInputs::enforceGroupNode(const PhysicalProperty & required_prop, const PhysicalProperty & output_prop)
 {
     LOG_TRACE(log, "Enforcing ExchangeData required_prop: {}, output_prop {}", required_prop.toString(), output_prop.toString());
     std::shared_ptr<ExchangeDataStep> exchange_step;
 
-    size_t max_block_size = task_context->getQueryContext()->getSettings().max_block_size;
+    size_t max_block_size = task_context->getQueryContext()->getSettingsRef()[Setting::max_block_size];
     /// Because the ordering of data may be changed after adding Exchange in a distributed manner,
     /// we need to retain the order of data during exchange if there is a requirement for data sorting.
-    if (required_prop.sort_prop.sort_scope == DataStream::SortScope::Stream
-        && output_prop.sort_prop.sort_scope >= DataStream::SortScope::Stream)
+    if (required_prop.sorting.sort_scope == Sorting::Scope::Stream
+        && output_prop.sorting.sort_scope >= Sorting::Scope::Stream)
     {
         exchange_step = std::make_shared<ExchangeDataStep>(
             required_prop.distribution,
-            group_node->getStep()->getOutputStream(),
+            group_node->getStep()->getOutputHeader(),
             max_block_size,
-            required_prop.sort_prop.sort_description,
-            DataStream::SortScope::Stream,
+            required_prop.sorting.sort_description,
+            Sorting::Scope::Stream,
             true);
     }
-    else if (required_prop.sort_prop.sort_scope == DataStream::SortScope::Global)
+    else if (required_prop.sorting.sort_scope == Sorting::Scope::Global)
     {
         exchange_step = std::make_shared<ExchangeDataStep>(
             required_prop.distribution,
-            group_node->getStep()->getOutputStream(),
+            group_node->getStep()->getOutputHeader(),
             max_block_size,
-            required_prop.sort_prop.sort_description,
-            DataStream::SortScope::Global,
+            required_prop.sorting.sort_description,
+            Sorting::Scope::Global,
             true,
             true);
     }
-    else if (
-        output_prop.sort_prop.sort_scope == DataStream::SortScope::Chunk && required_prop.distribution.type != Distribution::Type::Hashed)
+    else if (output_prop.sorting.sort_scope == Sorting::Scope::Chunk
+        && required_prop.distribution.type != Distribution::Type::Hashed)
     {
         /// We can keep the sort info if distribution type is not hash.
         exchange_step = std::make_shared<ExchangeDataStep>(
             required_prop.distribution,
-            group_node->getStep()->getOutputStream(),
+            group_node->getStep()->getOutputHeader(),
             max_block_size,
-            required_prop.sort_prop.sort_description,
-            DataStream::SortScope::Chunk,
+            required_prop.sorting.sort_description,
+            Sorting::Scope::Chunk,
             false,
             false);
     }
     else
     {
         exchange_step
-            = std::make_shared<ExchangeDataStep>(required_prop.distribution, group_node->getStep()->getOutputStream(), max_block_size);
+            = std::make_shared<ExchangeDataStep>(required_prop.distribution, group_node->getStep()->getOutputHeader(), max_block_size);
     }
 
     auto & group = task_context->getCurrentGroup();
 
     std::vector<Group *> children;
+    children.emplace_back(&group);
     GroupNodePtr group_enforce_node = std::make_shared<GroupNode>(exchange_step, children, true);
 
     auto group_node_id = task_context->getMemo().fetchAddGroupNodeId();
     group.addGroupNode(group_enforce_node, group_node_id);
 
-    auto child_cost = group.getCostByProp(output_prop);
+    auto child_cost = group.getLowestCost(output_prop);
+    if (!child_cost)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not find node and cost for {} in group {}", output_prop.toString(), group.getId());
 
     CostCalculator cost_calc(group.getStatistics(), task_context);
     auto cost = group_enforce_node->accept(cost_calc);
-    Cost total_cost = cost + child_cost;
+    Cost total_cost = cost + *child_cost;
     LOG_TRACE(log, "Enforced ExchangeData {} and now total cost is {}", group_enforce_node->toString(), total_cost.toString());
 
-    DeriveOutputProp output_prop_visitor(group_enforce_node, required_prop, {output_prop}, task_context->getQueryContext());
+    DeriveOutputProp output_prop_visitor(required_prop, {output_prop}, task_context->getQueryContext());
     const auto & actual_output_prop = group_enforce_node->accept(output_prop_visitor);
 
-    group_enforce_node->updateBestChild(actual_output_prop, {output_prop}, child_cost);
-    LOG_TRACE(log, "Actual output properties for enforced node is {}", actual_output_prop.toString());
+    group_enforce_node->updateBestChild(actual_output_prop, {output_prop}, *child_cost);
+    LOG_TRACE(log, "Derived output property for enforced node {}", actual_output_prop.toString());
 
-    group.updatePropBestNode(actual_output_prop, group_enforce_node->shared_from_this(), total_cost);
+    group.updateBest(actual_output_prop, group_enforce_node->shared_from_this(), total_cost);
     LOG_TRACE(
         log,
         "Enforced ExchangeData and now best plan node for {} is {}",
         actual_output_prop.toString(),
-        group.getSatisfiedBestGroupNode(required_prop)->second.group_node->getId());
+        group.tryGetBest(required_prop)->second.group_node->getId());
 
     return total_cost;
 }

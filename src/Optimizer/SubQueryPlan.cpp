@@ -13,11 +13,11 @@ void SubQueryPlan::addStep(QueryPlanStepPtr step)
     checkNotCompleted();
     if (root)
     {
-        const auto & root_header = root->step->getOutputStream().header;
+        const auto & root_header = root->step->getOutputHeader();
 
-        if (!step->getInputStreams().empty())
+        if (!step->getInputHeaders().empty())
         {
-            const auto & step_header = step->getInputStreams().front().header;
+            const auto & step_header = step->getInputHeaders().front();
             if (!blocksHaveEqualStructure(root_header, step_header))
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
@@ -31,13 +31,11 @@ void SubQueryPlan::addStep(QueryPlanStepPtr step)
 
         nodes.emplace_back(Node{.step = std::move(step), .children = {root}});
         root = &nodes.back();
-        return;
     }
     else
     {
         nodes.emplace_back(Node{.step = std::move(step)});
         root = &nodes.back();
-        return;
     }
 }
 
@@ -46,8 +44,8 @@ void SubQueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<SubQueryPlanPtr
     if (isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unite plans because current QueryPlan is already initialized");
 
-    const auto & inputs = step->getInputStreams();
-    size_t num_inputs = step->getInputStreams().size();
+    const auto & inputs = step->getInputHeaders();
+    size_t num_inputs = step->getInputHeaders().size();
     if (num_inputs != plans.size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -58,8 +56,8 @@ void SubQueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<SubQueryPlanPtr
 
     for (size_t i = 0; i < num_inputs; ++i)
     {
-        const auto & step_header = inputs[i].header;
-        const auto & plan_header = plans[i]->getCurrentDataStream().header;
+        const auto & step_header = inputs[i];
+        const auto & plan_header = plans[i]->getCurrentHeader();
         if (!blocksHaveEqualStructure(step_header, plan_header))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,

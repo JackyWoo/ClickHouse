@@ -5,7 +5,7 @@
 namespace DB
 {
 
-Cost CostCalculator::visit(QueryPlanStepPtr step)
+Cost CostCalculator::visit(const QueryPlanStepPtr & step)
 {
     return Base::visit(step);
 }
@@ -33,7 +33,7 @@ Cost CostCalculator::visit(AggregatingStep & step)
     const auto & input = input_statistics.front();
 
     /// Single stage aggregating
-    if (!step.isPreliminaryAgg())
+    if (!step.isPreliminary())
     {
         if (cbo_settings.cbo_aggregating_mode == CBOStepExecutionMode::TWO_STAGE)
             return Cost::infinite(cost_weight);

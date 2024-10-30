@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Columns/IColumn.h>
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
+#include <Columns/IColumn.h>
 #include <Optimizer/Statistics/Stats.h>
 #include <Optimizer/Cost/Cost.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
@@ -18,7 +18,7 @@ class Block;
 using Header = Block;
 
 class IQueryPlanStep;
-using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
+using QueryPlanStepPtr = std::shared_ptr<IQueryPlanStep>;
 
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
@@ -46,9 +46,9 @@ class QueryPlan
 {
 public:
     QueryPlan();
-    QueryPlan(QueryPlan &&) noexcept;
     virtual ~QueryPlan();
-    virtual QueryPlan & operator=(QueryPlan &&) noexcept;
+    QueryPlan(QueryPlan &&) noexcept;
+    QueryPlan & operator=(QueryPlan &&) noexcept;
 
     void unitePlans(QueryPlanStepPtr step, std::vector<QueryPlanPtr> plans);
     virtual void addStep(QueryPlanStepPtr step);

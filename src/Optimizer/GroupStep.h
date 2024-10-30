@@ -6,18 +6,18 @@
 namespace DB
 {
 
-class Group;
-
 class GroupStep final : public IQueryPlanStep
 {
 public:
-    explicit GroupStep(DataStream output_stream_, Group & group_);
+    explicit GroupStep(const Header & output_header_, Group & group_);
 
     String getName() const override;
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
-    Group & getGroup();
+    Group & getGroup() const;
+
+    void updateOutputHeader() override {}
 
 private:
     Group & group;

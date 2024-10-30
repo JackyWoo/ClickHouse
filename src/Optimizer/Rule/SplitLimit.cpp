@@ -1,10 +1,17 @@
-#include <Optimizer/GroupStep.h>
 #include <Optimizer/Rule/SplitLimit.h>
+
+#include <Core/Settings.h>
+#include <Optimizer/GroupStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+extern const SettingsBool exact_rows_before_limit;
+}
 
 SplitLimit::SplitLimit(size_t id_) : Rule(id_)
 {
@@ -22,21 +29,21 @@ std::vector<SubQueryPlan> SplitLimit::transform(SubQueryPlan & sub_plan, Context
     if (limit_step->getPhase() != LimitStep::Phase::Unknown)
         return {};
 
-    auto child_step = sub_plan.getRootNode()->children[0]->step;
+    auto & child_step = sub_plan.getRootNode()->children[0]->step;
     auto * group_step = typeid_cast<GroupStep *>(child_step.get());
     if (!group_step)
         return {};
 
     auto pre_limit = std::make_shared<LimitStep>(
-        limit_step->getInputStreams().front(), limit_step->getLimitForSorting(), 0, context->getSettings().exact_rows_before_limit);
+        limit_step->getInputHeaders().front(), limit_step->getLimitForSorting(), 0, context->getSettingsRef()[Setting::exact_rows_before_limit]);
     pre_limit->setPhase(LimitStep::Phase::Preliminary);
     pre_limit->setStepDescription("Preliminary");
 
     auto final_limit = std::make_shared<LimitStep>(
-        limit_step->getInputStreams().front(),
+        limit_step->getInputHeaders().front(),
         limit_step->getLimit(),
         limit_step->getOffset(),
-        context->getSettings().exact_rows_before_limit);
+        context->getSettingsRef()[Setting::exact_rows_before_limit]);
     final_limit->setPhase(LimitStep::Phase::Final);
     final_limit->setStepDescription("Final");
 

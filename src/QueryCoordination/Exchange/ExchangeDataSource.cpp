@@ -68,13 +68,13 @@ std::optional<Chunk> ExchangeDataSource::tryGenerate()
         auto info = std::make_shared<AggregatedChunkInfo>();
         info->bucket_num = block.info.bucket_num;
         info->is_overflows = block.info.is_overflows;
-        chunk.setChunkInfo(std::move(info));
+        chunk.getChunkInfos().add(std::move(info));
     }
 
     return chunk;
 }
 
-void ExchangeDataSource::onCancel()
+void ExchangeDataSource::onCancel() noexcept
 {
     LOG_DEBUG(&Poco::Logger::get("ExchangeDataSource"), "Fragment {} exchange id {} on cancel", fragment_id, plan_id);
     receive(Block());

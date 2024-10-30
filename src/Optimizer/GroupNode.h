@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Optimizer/Cost/Cost.h>
-#include <Optimizer/PhysicalProperties.h>
+#include <Optimizer/PhysicalProperty.h>
 #include <Optimizer/PlanStepVisitor.h>
 #include <Optimizer/Rule/RuleSet.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
@@ -9,46 +9,43 @@
 namespace DB
 {
 
-using ChildrenProp = std::vector<PhysicalProperties>;
-using AlternativeChildrenProp = std::vector<ChildrenProp>;
-using PropAndAlternativeChildrenProp = std::unordered_map<PhysicalProperties, AlternativeChildrenProp, PhysicalProperties::HashFunction>;
+using ChildProperties = PhysicalProperties;
+using AlternativeChildProperties = std::vector<ChildProperties>;
 
 class Group;
 
 class GroupNode final : public std::enable_shared_from_this<GroupNode>
 {
 public:
-    struct ChildrenPropCost
+    struct ChildPropertiesAndCost
     {
-        std::vector<PhysicalProperties> child_prop;
+        ChildProperties child_prop;
         Cost cost;
     };
 
-    using PropAndChildrenProp = std::unordered_map<PhysicalProperties, ChildrenPropCost, PhysicalProperties::HashFunction>;
+    /// output(required) property -> best corresponding child properties
+    using BestPropertiesMapping = std::unordered_map<PhysicalProperty, ChildPropertiesAndCost, PhysicalProperty::HashFunction>;
 
     GroupNode(GroupNode &&) noexcept;
     GroupNode(QueryPlanStepPtr step_, const std::vector<Group *> & children_, bool is_enforce_node_ = false);
 
     ~GroupNode();
 
+    const QueryPlanStepPtr & getStep() const;
+
     void addChild(Group & child);
     size_t childSize() const;
     std::vector<Group *> getChildren() const;
 
-    QueryPlanStepPtr getStep() const;
-
-    Group & getGroup();
+    Group & getGroup() const;
     void setGroup(Group * group_);
 
-    bool updateBestChild(
-        const PhysicalProperties & physical_properties, const std::vector<PhysicalProperties> & child_properties, Cost child_cost);
+    bool updateBestChild(const PhysicalProperty & property, const ChildProperties & child_properties, const Cost & child_cost);
+    const ChildProperties & getBestChildProperties(const PhysicalProperty & property);
 
-    const std::vector<PhysicalProperties> & getChildrenProp(const PhysicalProperties & physical_properties);
-
-    void addRequiredChildrenProp(ChildrenProp & child_pro);
-
-    AlternativeChildrenProp & getRequiredChildrenProp();
-    bool hasRequiredChildrenProp() const;
+    bool hasRequiredChildProperties() const;
+    AlternativeChildProperties & getAlternativeRequiredChildProperties();
+    void addRequiredChildProperties(ChildProperties & required_child_prop);
 
     bool isEnforceNode() const;
 
@@ -80,9 +77,8 @@ private:
 
     bool is_enforce_node;
 
-    /// output properties and input properties
-    PropAndChildrenProp prop_to_best_child;
-    AlternativeChildrenProp required_children_prop;
+    BestPropertiesMapping best_properties;
+    AlternativeChildProperties required_child_props;
 
     bool stats_derived;
 
@@ -93,9 +89,9 @@ using GroupNodePtr = std::shared_ptr<GroupNode>;
 
 struct GroupNodeHash
 {
-    std::size_t operator()(const GroupNodePtr & s) const
+    std::size_t operator()(const GroupNodePtr & group_node) const
     {
-        if (!s)
+        if (!group_node)
             return 0;
 
         size_t hash = 0;

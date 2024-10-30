@@ -63,7 +63,7 @@ public:
 
     void setDestination(Node * dest_exchange, FragmentPtr dest_fragment);
 
-    const DataStream & getCurrentDataStream() const;
+    const Header & getOutputHeader() const;
 
     Node * getRoot() const;
     const Nodes & getNodes() const;

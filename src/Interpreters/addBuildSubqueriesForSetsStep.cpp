@@ -13,14 +13,11 @@ void addBuildSubqueriesForSetsStep(
     QueryPlan & query_plan,
     ContextPtr context,
     PreparedSets & prepared_sets,
-    const std::vector<ActionsDAGPtr> & result_actions_to_execute)
+    const std::vector<const ActionsDAG *> & result_actions_to_execute)
 {
     PreparedSets::Subqueries subqueries;
     for (const auto & actions_to_execute : result_actions_to_execute)
     {
-        if (!actions_to_execute)
-            continue;
-
         for (const auto & node : actions_to_execute->getNodes())
         {
             const auto & set_column = node.column;
@@ -41,8 +38,7 @@ void addBuildSubqueriesForSetsStep(
 
     if (!subqueries.empty())
     {
-        auto step = std::make_unique<DelayedCreatingSetsStep>(query_plan.getCurrentDataStream(), std::move(subqueries), context);
-
+        auto step = std::make_unique<DelayedCreatingSetsStep>(query_plan.getCurrentHeader(), std::move(subqueries), context);
         query_plan.addStep(std::move(step));
     }
 }

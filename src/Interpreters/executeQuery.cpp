@@ -163,6 +163,7 @@ namespace Setting
     extern const SettingsSeconds wait_for_async_insert_timeout;
     extern const SettingsBool implicit_select;
     extern const SettingsBool enforce_strict_identifier_format;
+    extern const SettingsUInt64 interactive_delay;
 }
 
 namespace ErrorCodes
@@ -1761,7 +1762,7 @@ void executeQuery(
             if (context->isDistributedForQueryCoord())
             {
                 auto executor = streams.query_coord_state.pipelines.createCoordinationExecutor(
-                    pipeline, streams.query_coord_state.storage_limits, context->getSettingsRef().interactive_delay / 1000);
+                    pipeline, streams.query_coord_state.storage_limits, context->getSettingsRef()[Setting::interactive_delay] / 1000);
 
                 auto remote_pipelines_manager = executor->getRemotePipelinesManager();
                 remote_pipelines_manager->setManagedNode(streams.query_coord_state.remote_host_connection);

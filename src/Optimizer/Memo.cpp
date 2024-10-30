@@ -1,7 +1,5 @@
 #include <Optimizer/Memo.h>
 
-#include <stack>
-#include <Optimizer/DeriveOutputProp.h>
 #include <Optimizer/GroupStep.h>
 #include <Common/typeid_cast.h>
 
@@ -17,10 +15,10 @@ Memo::Memo(QueryPlan && plan, ContextPtr context_) : context(context_)
     auto & group_nodes = root_group->getGroupNodes();
     for (auto & group_node : group_nodes)
     {
-        std::vector<PhysicalProperties> required_child_prop;
+        std::vector<PhysicalProperty> required_child_prop;
         for (size_t j = 0; j < group_node->getChildren().size(); ++j)
             required_child_prop.push_back({.distribution = {.type = Distribution::Singleton}});
-        group_node->addRequiredChildrenProp(required_child_prop);
+        group_node->addRequiredChildProperties(required_child_prop);
     }
 }
 
@@ -80,13 +78,14 @@ GroupNodePtr Memo::addPlanNodeToGroup(const QueryPlan::Node & node, Group * targ
     return group_node;
 }
 
-void Memo::dump()
+void Memo::dump() const
 {
+    LOG_DEBUG(log, "Dumping memo:");
     for (auto & group : groups)
         LOG_DEBUG(log, "Group: {}", group.toString());
 }
 
-Group & Memo::rootGroup()
+Group & Memo::rootGroup() const
 {
     return *root_group;
 }
@@ -94,8 +93,8 @@ Group & Memo::rootGroup()
 QueryPlan Memo::extractPlan()
 {
     /// The distribution of root node is always singleton.
-    PhysicalProperties required_pro{.distribution = {.type = Distribution::Singleton}};
-    SubQueryPlan plan = extractPlan(*root_group, required_pro);
+    PhysicalProperty required_prop {.distribution = {.type = Distribution::Singleton}};
+    SubQueryPlan plan = extractPlan(*root_group, required_prop);
 
     WriteBufferFromOwnString buffer;
     SubQueryPlan::ExplainPlanOptions settings;
@@ -105,9 +104,9 @@ QueryPlan Memo::extractPlan()
     return plan;
 }
 
-SubQueryPlan Memo::extractPlan(Group & group, const PhysicalProperties & required_prop)
+SubQueryPlan Memo::extractPlan(Group & group, const PhysicalProperty & required_prop)
 {
-    const auto & prop_group_node = group.getSatisfiedBestGroupNode(required_prop);
+    const auto & prop_group_node = group.tryGetBest(required_prop);
     if (!prop_group_node.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No best node for group {}", group.getId());
 
@@ -119,18 +118,14 @@ SubQueryPlan Memo::extractPlan(Group & group, const PhysicalProperties & require
         group.getId(),
         required_prop.toString());
 
-    auto child_prop = group_node.getChildrenProp(prop_group_node->first);
+    auto child_prop = group_node.getBestChildProperties(prop_group_node->first);
 
     std::vector<SubQueryPlanPtr> child_plans;
     const auto & children_group = group_node.getChildren();
 
     for (size_t i = 0; i < child_prop.size(); ++i)
     {
-        SubQueryPlanPtr plan_ptr;
-        if (group_node.isEnforceNode())
-            plan_ptr = std::make_unique<SubQueryPlan>(extractPlan(group, child_prop[i]));
-        else
-            plan_ptr = std::make_unique<SubQueryPlan>(extractPlan(*children_group[i], child_prop[i]));
+        SubQueryPlanPtr plan_ptr = std::make_unique<SubQueryPlan>(extractPlan(*children_group[i], child_prop[i]));
         child_plans.emplace_back(std::move(plan_ptr));
     }
 

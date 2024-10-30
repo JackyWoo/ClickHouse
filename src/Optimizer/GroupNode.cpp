@@ -5,7 +5,7 @@ namespace DB
 {
 
 GroupNode::GroupNode(QueryPlanStepPtr step_, const std::vector<Group *> & children_, bool is_enforce_node_)
-    : id(0), step(step_), group(nullptr), children(children_), is_enforce_node(is_enforce_node_), stats_derived(false)
+    : id(0), step(std::move(step_)), group(nullptr), children(children_), is_enforce_node(is_enforce_node_), stats_derived(false)
 {
 }
 
@@ -27,12 +27,12 @@ std::vector<Group *> GroupNode::getChildren() const
     return children;
 }
 
-QueryPlanStepPtr GroupNode::getStep() const
+const QueryPlanStepPtr & GroupNode::getStep() const
 {
     return step;
 }
 
-Group & GroupNode::getGroup()
+Group & GroupNode::getGroup() const
 {
     return *group;
 }
@@ -42,35 +42,34 @@ void GroupNode::setGroup(Group * group_)
     group = group_;
 }
 
-bool GroupNode::updateBestChild(
-    const PhysicalProperties & physical_properties, const std::vector<PhysicalProperties> & child_properties, Cost child_cost)
+bool GroupNode::updateBestChild(const PhysicalProperty & property, const PhysicalProperties & child_properties, const Cost & child_cost)
 {
-    if (!prop_to_best_child.contains(physical_properties) || child_cost < prop_to_best_child[physical_properties].cost)
+    if (!best_properties.contains(property) || child_cost < best_properties[property].cost)
     {
-        prop_to_best_child[physical_properties] = {child_properties, child_cost};
+        best_properties[property] = {child_properties, child_cost};
         return true;
     }
     return false;
 }
 
-const std::vector<PhysicalProperties> & GroupNode::getChildrenProp(const PhysicalProperties & physical_properties)
+const ChildProperties & GroupNode::getBestChildProperties(const PhysicalProperty & property)
 {
-    return prop_to_best_child[physical_properties].child_prop;
+    return best_properties[property].child_prop;
 }
 
-void GroupNode::addRequiredChildrenProp(ChildrenProp & child_pro)
+void GroupNode::addRequiredChildProperties(ChildProperties & required_child_prop)
 {
-    required_children_prop.emplace_back(child_pro);
+    required_child_props.emplace_back(required_child_prop);
 }
 
-AlternativeChildrenProp & GroupNode::getRequiredChildrenProp()
+AlternativeChildProperties & GroupNode::getAlternativeRequiredChildProperties()
 {
-    return required_children_prop;
+    return required_child_props;
 }
 
-bool GroupNode::hasRequiredChildrenProp() const
+bool GroupNode::hasRequiredChildProperties() const
 {
-    return !required_children_prop.empty();
+    return !required_child_props.empty();
 }
 
 bool GroupNode::isEnforceNode() const
@@ -138,14 +137,14 @@ String GroupNode::toString() const
     res += ", best properties: ";
     String prop_map;
 
-    if (prop_to_best_child.empty())
+    if (best_properties.empty())
     {
         prop_map = "none";
     }
     else
     {
         size_t num = 1;
-        for (const auto & [output_prop, child_prop_cost] : prop_to_best_child)
+        for (const auto & [output_prop, child_prop_cost] : best_properties)
         {
             prop_map += output_prop.distribution.toString() + "=";
             if (child_prop_cost.child_prop.empty())
@@ -162,7 +161,7 @@ String GroupNode::toString() const
                 }
             }
 
-            if (num != prop_to_best_child.size())
+            if (num != best_properties.size())
                 prop_map += "-";
             num++;
         }

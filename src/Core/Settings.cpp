@@ -5812,7 +5812,24 @@ Experimental data deduplication for SELECT queries based on part UUIDs
 )", 0) \
     M(Bool, implicit_select, false, R"(
 Allow writing simple SELECT queries without the leading SELECT keyword, which makes it simple for calculator-style usage, e.g. `1 + 2` becomes a valid query.
-)", 0)
+)", 0) \
+    \
+    /** CBO Optimizer */ \
+    M(Bool, allow_experimental_query_coordination, false, "Allow experimental query coordination which will execute in full MPP mode and support CBO optimizer.", 0) \
+    M(Bool, optimize_query_coordination_sharding_key, true, "Optimize GROUP BY sharding_key queries for query coordination.", 0) \
+    M(CBOStepExecutionMode, cbo_aggregating_mode, CBOStepExecutionMode::DETERMINED_BY_OPTIMIZER, "Aggregating step execution mode", 0) \
+    M(CBOStepExecutionMode, cbo_topn_mode, CBOStepExecutionMode::DETERMINED_BY_OPTIMIZER, "TopN step execution mode, only used when CBO is enabled.", 0) \
+    M(CBOStepExecutionMode, cbo_sorting_mode, CBOStepExecutionMode::DETERMINED_BY_OPTIMIZER, "Sorting step execution mode, only used when CBO is enabled.", 0) \
+    M(CBOStepExecutionMode, cbo_limiting_mode, CBOStepExecutionMode::DETERMINED_BY_OPTIMIZER, "Limit step execution mode, only used when CBO is enabled.", 0) \
+    M(CBOJoinDistributionMode, cbo_join_distribution_mode, CBOJoinDistributionMode::DETERMINED_BY_OPTIMIZER, "Join replication mode, only used when CBO is enabled.", 0) \
+    M(Float, cost_cpu_weight, 0.2f, "Represent the weight of cpu in cost modeling.", 0) \
+    M(Float, cost_mem_weight, 0.2f, "Represent the weight of memory in cost modeling.", 0) \
+    M(Float, cost_net_weight, 0.6f, "Represent the weight of network in cost modeling.", 0) \
+    M(Float, statistics_agg_unknown_column_first_key_coefficient, 0.001f, "To calculate row count of aggregating result, when there is any column whose statistics is unknown, we use the coefficient to calculate the ndv of the first key.", 0) \
+    M(Float, statistics_agg_unknown_column_rest_key_coefficient, 0.1f, "To calculate row count of aggregating result, we use the coefficient to calculate the ndv of the rest keys.", 0) \
+    M(Float, statistics_agg_full_cardinality_coefficient, 0.1f, "When calculating statistics for preliminary aggregating, first we assume data is evenly distributed into shards and all shards has full cardinality of data set. But in practice a shard may have only partial of cardinality, so we multiply a coefficient.", 0) \
+    M(Float, cost_pre_sorting_operation_weight, 0.1f, "Weight of one row calculation of preliminary sorting step.", 0) \
+    M(Float, cost_merge_agg_uniq_calculation_weight, 1.0f, "Weight of uniq and uniqExact agg function in merging stage. Uniq and uniqExact function in merging stage takes long time than one stage agg in some data quantities. So here we add a coefficient to use one stage aggregating.", 0)
 
 
 // End of COMMON_SETTINGS

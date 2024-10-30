@@ -16,7 +16,7 @@ public:
     void run();
     void pushTask(OptimizeTaskPtr task);
 
-    UInt64 getRunCount() { return run_count; }
+    UInt64 getRunCount() const { return run_count; }
 
 private:
     Poco::Timestamp start_time_ms;

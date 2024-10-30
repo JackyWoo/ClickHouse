@@ -10,7 +10,7 @@ namespace DB
 class ConvertToTopN final : public Rule
 {
 public:
-    ConvertToTopN(size_t id_);
+    explicit ConvertToTopN(size_t id_);
 
     std::vector<SubQueryPlan> transform(SubQueryPlan & sub_plan, ContextPtr context) override;
 };

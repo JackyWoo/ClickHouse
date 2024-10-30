@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Optimizer/Cost/CostSettings.h>
-#include <Optimizer/DeriveRequiredChildProp.h>
+#include <Optimizer/DeriveRequiredChildProps.h>
 #include <Optimizer/Tasks/OptimizeTask.h>
 
 namespace DB
@@ -18,8 +18,8 @@ public:
     {
         Frame(GroupNodePtr node, ContextPtr context)
         {
-            DeriveRequiredChildProp visitor(node, context);
-            alternative_child_prop = node->accept(visitor);
+            DeriveRequiredChildProps visitor(node, context);
+            alternative_child_props = node->accept(visitor);
 
             prop_idx = 0;
             child_idx = 0;
@@ -29,7 +29,7 @@ public:
             total_cost = Cost(CostSettings::fromContext(context).getCostWeight(), 0);
         }
 
-        /// Whether it is turn to visit new alternative sub problem.
+        /// Whether we should visit new alternative sub problem.
         bool newAlternativeCalc() const { return pre_child_idx == -1 && child_idx == 0; }
 
         void resetAlternativeState()
@@ -44,7 +44,7 @@ public:
         /// Alternative children properties, actually they are child problems, for example as to join,
         /// there are 2 child problems broadcast join and shuffle join.
         /// Note that for leaf node of query plan, alternative_child_prop has one element which has no child property.
-        AlternativeChildrenProp alternative_child_prop;
+        AlternativeChildProperties alternative_child_props;
         Int32 prop_idx;
 
         /// alternative calc frame
@@ -53,7 +53,7 @@ public:
         Cost local_cost;
         Cost total_cost;
 
-        std::vector<PhysicalProperties> actual_children_prop;
+        PhysicalProperties actual_children_prop;
     };
 
     OptimizeInputs(GroupNodePtr group_node_, TaskContextPtr task_context_, std::unique_ptr<Frame> frame_ = nullptr);
@@ -65,11 +65,11 @@ public:
 private:
     OptimizeTaskPtr clone();
 
-    bool isInitialTask() const;
+    Cost enforceGroupNode(const PhysicalProperty & required_prop, const PhysicalProperty & output_prop);
 
-    Cost enforceGroupNode(const PhysicalProperties & required_prop, const PhysicalProperties & output_prop);
-
-    void enforceTwoLevelAggIfNeed(const PhysicalProperties & required_prop);
+    /// Try best to use two level aggregation. TODO some keys e.g. uint8 does not support two-level aggregation.
+    /// Exchange step now shuffle data by the bucket of the two-level hashmap, and right now it des not support shuffles data by key, TODO support it.
+    void enforceTwoLevelAggIfNeed(const PhysicalProperty & required_prop);
 
     GroupNodePtr group_node;
     std::unique_ptr<Frame> frame;

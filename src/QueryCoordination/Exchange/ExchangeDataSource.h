@@ -19,8 +19,8 @@ using ExchangeDataSourcePtr = std::shared_ptr<ExchangeDataSource>;
 class ExchangeDataSource final : public ISource, public std::enable_shared_from_this<ExchangeDataSource>
 {
 public:
-    ExchangeDataSource(const DataStream & data_stream, UInt32 fragment_id_, UInt32 plan_id_, const String & source_)
-        : ISource(data_stream.header, false), fragment_id(fragment_id_), plan_id(plan_id_), source(source_)
+    ExchangeDataSource(const Header & output_header_, UInt32 fragment_id_, UInt32 plan_id_, const String & source_)
+        : ISource(output_header_, false), fragment_id(fragment_id_), plan_id(plan_id_), source(source_)
     {
         /// default it's aggregate chunk. It cannot be judged based on the datatype is DataTypeAggregateFunction
         /// E.g select id,name from aaa_all group by id,name order by id,name SETTINGS allow_experimental_query_coordination = 1;
@@ -50,7 +50,7 @@ public:
     Status prepare() override;
     String getName() const override { return "ExchangeData"; }
 
-    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr /*counter*/) override { }
+    void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr /*counter*/) override { }
     void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & storage_limits_) override;
 
     /// Stop reading from stream if output port is finished.
@@ -63,7 +63,7 @@ public:
 
 protected:
     std::optional<Chunk> tryGenerate() override;
-    void onCancel() override;
+    void onCancel() noexcept override;
 
 private:
     std::condition_variable cv;

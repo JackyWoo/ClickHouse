@@ -41,7 +41,7 @@ FragmentPtr FragmentBuilder::build()
             if (auto * exchange_step = typeid_cast<ExchangeDataStep *>(frame.node->step.get()))
             {
                 last_fragment = std::make_shared<Fragment>(context->getFragmentID(), context);
-                last_fragment->addStep(frame.node->step);
+                last_fragment->addStep(std::move(frame.node->step));
 
                 exchange_step->setFragmentId(last_fragment->getFragmentID());
                 exchange_step->setPlanID(last_fragment->getRoot()->plan_id);
@@ -50,17 +50,17 @@ FragmentPtr FragmentBuilder::build()
             else if (next_child == 0)
             {
                 last_fragment = std::make_shared<Fragment>(context->getFragmentID(), context);
-                last_fragment->addStep(frame.node->step);
+                last_fragment->addStep(std::move(frame.node->step));
             }
             else if (next_child == 1)
             {
-                frame.child_fragments[0]->addStep(frame.node->step);
+                frame.child_fragments[0]->addStep(std::move(frame.node->step));
                 last_fragment = frame.child_fragments[0];
             }
             else
             {
                 last_fragment = std::make_shared<Fragment>(context->getFragmentID(), context);
-                last_fragment->uniteFragments(frame.node->step, frame.child_fragments);
+                last_fragment->uniteFragments(std::move(frame.node->step), frame.child_fragments);
             }
 
             stack.pop();

@@ -14,7 +14,7 @@ void OptimizeTask::pushTask(OptimizeTaskPtr task)
     task_context->pushTask(std::move(task));
 }
 
-ContextPtr OptimizeTask::getQueryContext()
+ContextPtr OptimizeTask::getQueryContext() const
 {
     return task_context->getQueryContext();
 }

@@ -1,18 +1,23 @@
-#include <iostream>
+#include <QueryCoordination/Fragments/Fragment.h>
+
 #include <stack>
 #include <Core/SortCursor.h>
+#include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryCoordination/Exchange/ExchangeDataStep.h>
-#include <QueryCoordination/Fragments/Fragment.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Common/JSONBuilder.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+extern const SettingsUInt64 max_block_size;
+}
 
 Fragment::Fragment(UInt32 fragment_id_, ContextMutablePtr context_)
     : fragment_id(fragment_id_), plan_id_counter(0), root(nullptr), dest_exchange_node(nullptr), dest_fragment_id(0), context(context_)
@@ -21,7 +26,7 @@ Fragment::Fragment(UInt32 fragment_id_, ContextMutablePtr context_)
 
 void Fragment::addStep(QueryPlanStepPtr step)
 {
-    size_t num_input_streams = step->getInputStreams().size();
+    size_t num_input_streams = step->getInputHeaders().size();
 
     if (num_input_streams == 0)
     {
@@ -31,7 +36,7 @@ void Fragment::addStep(QueryPlanStepPtr step)
                 "Cannot add step {} to QueryPlan because step has no inputs, but QueryPlan is already initialized",
                 step->getName());
 
-        nodes.emplace_back(makeNewNode(step));
+        nodes.emplace_back(makeNewNode(std::move(step)));
         root = &nodes.back();
         return;
     }
@@ -44,8 +49,8 @@ void Fragment::addStep(QueryPlanStepPtr step)
                 "Cannot add step {} to QueryPlan because step has input, but QueryPlan is not initialized",
                 step->getName());
 
-        const auto & root_header = root->step->getOutputStream().header;
-        const auto & step_header = step->getInputStreams().front().header;
+        const auto & root_header = root->step->getOutputHeader();
+        const auto & step_header = step->getInputHeaders().front();
         if (!blocksHaveEqualStructure(root_header, step_header))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -55,7 +60,7 @@ void Fragment::addStep(QueryPlanStepPtr step)
                 root_header.dumpStructure(),
                 step_header.dumpStructure());
 
-        nodes.emplace_back(makeNewNode(step, {root}));
+        nodes.emplace_back(makeNewNode(std::move(step), {root}));
         root = &nodes.back();
 
         return;
@@ -78,15 +83,15 @@ bool Fragment::isInitialized() const
 Fragment::Node Fragment::makeNewNode(QueryPlanStepPtr step, std::vector<PlanNode *> children_)
 {
     Node node;
-    node.step = step;
+    node.step = std::move(step);
     node.plan_id = ++plan_id_counter;
     node.children = children_;
     return node;
 }
 
-const DataStream & Fragment::getCurrentDataStream() const
+const Header & Fragment::getOutputHeader() const
 {
-    return root->step->getOutputStream();
+    return root->step->getOutputHeader();
 }
 
 void Fragment::uniteFragments(QueryPlanStepPtr step, FragmentPtrs & fragments)
@@ -94,7 +99,7 @@ void Fragment::uniteFragments(QueryPlanStepPtr step, FragmentPtrs & fragments)
     if (isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unite plans because current QueryPlan is already initialized");
 
-    size_t num_inputs = step->getInputStreams().size();
+    size_t num_inputs = step->getInputHeaders().size();
     if (num_inputs != fragments.size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -103,11 +108,11 @@ void Fragment::uniteFragments(QueryPlanStepPtr step, FragmentPtrs & fragments)
             fragments.size(),
             num_inputs);
 
-    const auto & inputs = step->getInputStreams();
+    const auto & inputs = step->getInputHeaders();
     for (size_t i = 0; i < num_inputs; ++i)
     {
-        const auto & step_header = inputs[i].header;
-        const auto & plan_header = fragments[i]->getCurrentDataStream().header;
+        const auto & step_header = inputs[i];
+        const auto & plan_header = fragments[i]->getOutputHeader();
         if (!blocksHaveEqualStructure(step_header, plan_header))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -141,7 +146,7 @@ void Fragment::uniteFragments(QueryPlanStepPtr step, FragmentPtrs & fragments)
         }
     }
 
-    nodes.emplace_back(makeNewNode(step));
+    nodes.emplace_back(makeNewNode(std::move(step)));
     root = &nodes.back();
 
     for (auto & fragment : fragments)
@@ -262,7 +267,7 @@ QueryPipeline Fragment::buildQueryPipeline(std::vector<ExchangeDataSink::Channel
                 builder->getHeader(),
                 builder->getNumStreams(),
                 exchange_data_step->getSortDescription(),
-                context->getSettings().max_block_size,
+                context->getSettingsRef()[Setting::max_block_size],
                 /*max_block_size_bytes=*/0,
                 SortingQueueStrategy::Batch,
                 0,
@@ -307,16 +312,16 @@ explainStep(const IQueryPlanStep & step, IQueryPlanStep::FormatSettings & settin
     {
         settings.out << prefix;
 
-        if (!step.hasOutputStream())
+        if (!step.hasOutputHeader())
             settings.out << "No header";
-        else if (!step.getOutputStream().header)
+        else if (!step.getOutputHeader())
             settings.out << "Empty header";
         else
         {
             settings.out << "Header: ";
             bool first = true;
 
-            for (const auto & elem : step.getOutputStream().header)
+            for (const auto & elem : step.getOutputHeader())
             {
                 if (!first)
                     settings.out << "\n" << prefix << "        ";
@@ -330,14 +335,10 @@ explainStep(const IQueryPlanStep & step, IQueryPlanStep::FormatSettings & settin
 
     if (options.sorting)
     {
-        if (step.hasOutputStream())
+        if (const auto & sort_description = step.getSortDescription(); !sort_description.empty())
         {
-            settings.out << prefix << "Sorting (" << step.getOutputStream().sort_scope << ")";
-            if (step.getOutputStream().sort_scope != DataStream::SortScope::None)
-            {
-                settings.out << ": ";
-                dumpSortDescription(step.getOutputStream().sort_description, settings.out);
-            }
+            settings.out << prefix << "Sorting: ";
+            dumpSortDescription(sort_description, settings.out);
             settings.out.write('\n');
         }
     }

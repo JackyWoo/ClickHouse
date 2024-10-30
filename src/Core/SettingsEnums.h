@@ -369,8 +369,8 @@ DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 enum class CBOStepExecutionMode : uint8_t
 {
     ONE_STAGE,
-        TWO_STAGE,
-        DETERMINED_BY_OPTIMIZER
+    TWO_STAGE,
+    DETERMINED_BY_OPTIMIZER
 };
 
 DECLARE_SETTING_ENUM(CBOStepExecutionMode)

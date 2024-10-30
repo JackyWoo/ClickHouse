@@ -1,9 +1,18 @@
-#include <Optimizer/GroupStep.h>
 #include <Optimizer/Rule/SplitTopN.h>
+
+#include <Core/Settings.h>
+#include <Optimizer/GroupStep.h>
 #include <Processors/QueryPlan/TopNStep.h>
+
 
 namespace DB
 {
+
+namespace Setting
+{
+extern const SettingsBool exact_rows_before_limit;
+extern const SettingsUInt64 max_block_size;
+}
 
 SplitTopN::SplitTopN(size_t id_) : Rule(id_)
 {
@@ -21,16 +30,16 @@ std::vector<SubQueryPlan> SplitTopN::transform(SubQueryPlan & sub_plan, ContextP
     if (topn_step->getPhase() != TopNStep::Phase::Unknown)
         return {};
 
-    auto child_step = sub_plan.getRootNode()->children[0]->step;
+    auto & child_step = sub_plan.getRootNode()->children[0]->step;
     auto * group_step = typeid_cast<GroupStep *>(child_step.get());
     if (!group_step)
         return {};
 
-    const auto exact_rows_before_limit = context->getSettingsRef().exact_rows_before_limit;
+    const auto exact_rows_before_limit = context->getSettingsRef()[Setting::exact_rows_before_limit];
     auto pre_topn = topn_step->makePreliminary(exact_rows_before_limit);
 
-    const auto max_block_size = context->getSettingsRef().max_block_size;
-    auto final_topn = topn_step->makeFinal(pre_topn->getOutputStream(), max_block_size, exact_rows_before_limit);
+    const auto max_block_size = context->getSettingsRef()[Setting::max_block_size];
+    auto final_topn = topn_step->makeFinal(pre_topn->getOutputHeader(), max_block_size, exact_rows_before_limit);
 
     SubQueryPlan res_sub_plan;
     res_sub_plan.addStep(child_step);
@@ -41,4 +50,5 @@ std::vector<SubQueryPlan> SplitTopN::transform(SubQueryPlan & sub_plan, ContextP
     res.emplace_back(std::move(res_sub_plan));
     return res;
 }
+
 }

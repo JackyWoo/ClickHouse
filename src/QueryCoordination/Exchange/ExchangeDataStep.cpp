@@ -4,7 +4,6 @@
 #include <QueryCoordination/Exchange/ExchangeDataStep.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <QueryPipeline/StreamLocalLimits.h>
 
 namespace DB
 {
@@ -21,7 +20,7 @@ void ExchangeDataStep::initializePipeline(QueryPipelineBuilder & pipeline, const
             fragment_id,
             plan_id,
             source);
-        auto receiver = std::make_shared<ExchangeDataSource>(output_stream.value(), fragment_id, plan_id, source);
+        auto receiver = std::make_shared<ExchangeDataSource>(*output_header, fragment_id, plan_id, source);
         pipes.emplace_back(receiver);
     }
 

@@ -14,7 +14,7 @@ void OptimizeGroup::execute()
 {
     auto & group = task_context->getCurrentGroup();
 
-    if (group.getSatisfiedBestGroupNode(task_context->getRequiredProp()))
+    if (group.tryGetBest(task_context->getRequiredProp()))
         return;
 
     for (auto & group_node : group.getGroupNodes())

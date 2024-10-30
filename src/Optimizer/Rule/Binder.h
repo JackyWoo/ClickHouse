@@ -23,7 +23,6 @@ private:
     std::vector<SubQueryPlanPtr> extractGroup(const Pattern & pattern_, Group & group);
 
     const Pattern & pattern;
-
     GroupNodePtr group_node;
 };
 

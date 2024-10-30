@@ -1,6 +1,5 @@
 #include <Optimizer/Statistics/DeriveStatistics.h>
 
-#include <DataTypes/DataTypeDateTime.h>
 #include <Optimizer/Statistics/ExpressionStatsCalculator.h>
 #include <Optimizer/Statistics/IStatisticsStorage.h>
 #include <Optimizer/Statistics/JoinStatsCalculator.h>
@@ -16,7 +15,7 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-Stats DeriveStatistics::visit(QueryPlanStepPtr step)
+Stats DeriveStatistics::visit(const QueryPlanStepPtr & step)
 {
     LOG_TRACE(log, "Collecting statistics for step {}", step->getName());
     return Base::visit(step);
@@ -24,14 +23,14 @@ Stats DeriveStatistics::visit(QueryPlanStepPtr step)
 
 Stats DeriveStatistics::visitDefault(IQueryPlanStep & step)
 {
-    auto output_columns = step.getOutputStream().header.getNames();
+    auto output_columns = step.getOutputHeader().getNames();
 
     /// Return unknown statistics for non merge tree family storage engine.
     if (typeid_cast<ISourceStep *>(&step))
         return Stats::unknown(output_columns);
 
     Stats statistics;
-    chassert(input_statistics.size() == step.getInputStreams().size());
+    chassert(input_statistics.size() == step.getInputHeaders().size());
 
     /// Just find in input statistics by output column name,
     // if not found (step may change input columns) make unknown column statistics
@@ -74,7 +73,7 @@ Stats DeriveStatistics::visit(ReadFromMergeTree & step)
         input = std::make_shared<Stats>();
 
     /// Final statistics output column names.
-    const auto & output_columns = step.getOutputStream().header.getNames();
+    const auto & output_columns = step.getOutputHeader().getNames();
 
     /// Add all columns to statistics
     auto add_column_if_not_exist = [&input](const Names & columns)
@@ -108,21 +107,18 @@ Stats DeriveStatistics::visit(ReadFromMergeTree & step)
         if (prewhere_info->row_level_filter)
         {
             statistics = PredicateStatsCalculator::calculateStatistics(
-                prewhere_info->row_level_filter, prewhere_info->row_level_column_name, statistics);
+                *prewhere_info->row_level_filter, prewhere_info->row_level_column_name, statistics);
 
             statistics.removeColumnStatistics(prewhere_info->row_level_column_name);
             append_column_stats();
         }
 
-        if (prewhere_info->prewhere_actions)
-        {
-            statistics = PredicateStatsCalculator::calculateStatistics(
-                prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name, statistics);
+        statistics = PredicateStatsCalculator::calculateStatistics(
+            prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name, statistics);
 
-            if (prewhere_info->remove_prewhere_column)
-                statistics.removeColumnStatistics(prewhere_info->prewhere_column_name);
-            append_column_stats();
-        }
+        if (prewhere_info->remove_prewhere_column)
+            statistics.removeColumnStatistics(prewhere_info->prewhere_column_name);
+        append_column_stats();
     }
 
     /// 3. calculate for pushed down filters
@@ -132,7 +128,7 @@ Stats DeriveStatistics::visit(ReadFromMergeTree & step)
         const auto & predicate_node_name = predicate->getOutputs()[0]->result_name;
         /// The output only contains the filter_node
         /// TODO add other input columns
-        statistics = PredicateStatsCalculator::calculateStatistics(predicate, predicate_node_name, statistics);
+        statistics = PredicateStatsCalculator::calculateStatistics(*predicate, predicate_node_name, statistics);
         append_column_stats();
     }
 
@@ -163,8 +159,8 @@ Stats DeriveStatistics::visit(AggregatingStep & step)
 {
     Stats statistics;
 
-    Names input_names = step.getInputStreams().front().header.getNames();
-    Names output_names = step.getOutputStream().header.getNames();
+    Names input_names = step.getInputHeaders().front().getNames();
+    Names output_names = step.getOutputHeader().getNames();
 
     const auto & input = input_statistics.front();
 
@@ -232,7 +228,7 @@ Stats DeriveStatistics::visit(AggregatingStep & step)
 
     /// The selectivity calculated is global, but for the first stage,
     /// the output row count is larger than the final stage.
-    if (step.isPreliminaryAgg())
+    if (step.isPreliminary())
     {
         /// Final selectivity calculation formula:
         ///     selectivity *= node_count * coefficient.
@@ -284,7 +280,7 @@ Stats DeriveStatistics::visit(AggregatingStep & step)
     /// 4. update aggregating column data type and row size
     for (const auto & aggregate : step.getParams().aggregates)
     {
-        const auto * output_column = step.getOutputStream().header.findByName(aggregate.column_name);
+        const auto * output_column = step.getOutputHeader().findByName(aggregate.column_name);
 
         /// Input stream of aggregating step may has 0 header column, such as: 'select count() from t'.
         if (!statistics.containsColumnStatistics(aggregate.column_name))
@@ -306,7 +302,7 @@ Stats DeriveStatistics::visit(AggregatingStep & step)
 
 Stats DeriveStatistics::visit(MergingAggregatedStep & step)
 {
-    for (auto & output_column : step.getOutputStream().header.getNames())
+    for (auto & output_column : step.getOutputHeader().getNames())
         chassert(input_statistics.front().containsColumnStatistics(output_column));
 
     Stats statistics = input_statistics.front().clone();
@@ -327,10 +323,10 @@ Stats DeriveStatistics::visit(SortingStep & step)
 
 Stats DeriveStatistics::visit(CreatingSetsStep & step)
 {
-    auto output_columns = step.getOutputStream().header.getNames();
+    auto output_columns = step.getOutputHeader().getNames();
 
     Stats statistics;
-    chassert(input_statistics.size() == step.getInputStreams().size());
+    chassert(input_statistics.size() == step.getInputHeaders().size());
 
     /// Just find in input statistics by output column name,
     // if not found (step may change input columns) make unknown column statistics
@@ -409,18 +405,18 @@ Stats DeriveStatistics::visit(UnionStep & step)
     Stats statistics;
 
     chassert(input_statistics.size() > 1);
-    chassert(step.getInputStreams().size() == input_statistics.size());
+    chassert(step.getInputHeaders().size() == input_statistics.size());
 
-    auto output_columns = step.getOutputStream().header.getNames();
+    auto output_columns = step.getOutputHeader().getNames();
 
     for (size_t i = 0; i < input_statistics.size(); i++)
     {
-        chassert(step.getInputStreams()[i].header.getNames().size() == output_columns.size());
+        chassert(step.getInputHeaders()[i].getNames().size() == output_columns.size());
         chassert(input_statistics[i].getColumnStatisticsSize() == output_columns.size());
     }
 
     /// init by the first input
-    auto first_input_columns = step.getInputStreams()[0].header.getNames();
+    auto first_input_columns = step.getInputHeaders()[0].getNames();
     const auto & first_stats = input_statistics[0];
 
     for (size_t i = 0; i < output_columns.size(); i++)
@@ -430,9 +426,9 @@ Stats DeriveStatistics::visit(UnionStep & step)
     }
 
     /// merge the left inputs
-    for (size_t i = 1; i < step.getInputStreams().size(); i++)
+    for (size_t i = 1; i < step.getInputHeaders().size(); i++)
     {
-        auto left_input_columns = step.getInputStreams()[i].header.getNames();
+        auto left_input_columns = step.getInputHeaders()[i].getNames();
         auto & left_stats = input_statistics[i];
 
         for (size_t j = 0; j < output_columns.size(); j++)

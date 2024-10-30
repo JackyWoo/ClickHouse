@@ -5,15 +5,14 @@
 namespace DB
 {
 
-TaskContext::TaskContext(Group & group_, const PhysicalProperties & required_properties_, OptimizeContextPtr optimize_context_)
-    : group(group_), required_properties(required_properties_), optimize_context(optimize_context_)
+TaskContext::TaskContext(Group & group_, const PhysicalProperty & required_propertys_, OptimizeContextPtr optimize_context_)
+    : group(group_), required_property(required_propertys_), optimize_context(optimize_context_)
 {
     upper_bound_cost = Cost::infinite(CostSettings::fromContext(optimize_context_->getQueryContext()).getCostWeight());
 }
 
-TaskContext::TaskContext(
-    Group & group_, const PhysicalProperties & required_properties_, OptimizeContextPtr optimize_context_, Cost upper_bound_cost_)
-    : group(group_), required_properties(required_properties_), upper_bound_cost(upper_bound_cost_), optimize_context(optimize_context_)
+TaskContext::TaskContext( Group & group_, const PhysicalProperty & required_property_, OptimizeContextPtr optimize_context_, Cost upper_bound_cost_)
+    : group(group_), required_property(required_property_), upper_bound_cost(upper_bound_cost_), optimize_context(optimize_context_)
 {
 }
 
@@ -22,9 +21,9 @@ Group & TaskContext::getCurrentGroup()
     return group;
 }
 
-const PhysicalProperties & TaskContext::getRequiredProp() const
+const PhysicalProperty & TaskContext::getRequiredProp() const
 {
-    return required_properties;
+    return required_property;
 }
 
 OptimizeContextPtr TaskContext::getOptimizeContext()

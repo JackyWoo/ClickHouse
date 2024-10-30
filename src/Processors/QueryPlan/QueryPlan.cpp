@@ -210,85 +210,6 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     return last_pipeline;
 }
 
-static void explainStep(
-    const PlanNode & node,
-    IQueryPlanStep::FormatSettings & settings,
-    const QueryPlan::ExplainPlanOptions & options)
-{
-    const IQueryPlanStep & step = *node.step;
-
-    std::string prefix(settings.offset, ' ');
-    settings.out << prefix;
-    settings.out << step.getName();
-
-    const auto & description = step.getStepDescription();
-    if (options.description && !description.empty())
-        settings.out <<" (" << description << ')';
-
-    settings.out.write('\n');
-
-    if (options.header)
-    {
-        settings.out << prefix;
-
-        if (!step.hasOutputStream())
-            settings.out << "No header";
-        else if (!step.getOutputStream().header)
-            settings.out << "Empty header";
-        else
-        {
-            settings.out << "Header: ";
-            bool first = true;
-
-            for (const auto & elem : step.getOutputStream().header)
-            {
-                if (!first)
-                    settings.out << "\n" << prefix << "        ";
-
-                first = false;
-                elem.dumpNameAndType(settings.out);
-            }
-        }
-        settings.out.write('\n');
-    }
-
-    if (options.statistics)
-    {
-        settings.out << prefix;
-        settings.out << "Statistics: ";
-        settings.out << node.statistics.getOutputRowSize();
-        settings.out.write('\n');
-    }
-
-    if (options.cost)
-    {
-        settings.out << prefix;
-        settings.out << "Cost: ";
-        settings.out << node.cost.toString();
-        settings.out.write('\n');
-    }
-
-    if (options.sorting)
-    {
-        if (step.hasOutputStream())
-        {
-            settings.out << prefix << "Sorting (" << step.getOutputStream().sort_scope << ")";
-            if (step.getOutputStream().sort_scope != DataStream::SortScope::None)
-            {
-                settings.out << ": ";
-                dumpSortDescription(step.getOutputStream().sort_description, settings.out);
-            }
-            settings.out.write('\n');
-        }
-    }
-
-    if (options.actions)
-        step.describeActions(settings);
-
-    if (options.indexes)
-        step.describeIndexes(settings);
-}
-
 static void explainStep(const PlanNode & node, JSONBuilder::JSONMap & map, const QueryPlan::ExplainPlanOptions & options)
 {
     const IQueryPlanStep & step = *node.step;
@@ -390,6 +311,81 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) 
     return tree;
 }
 
+static void explainStep(
+    const PlanNode & node,
+    IQueryPlanStep::FormatSettings & settings,
+    const QueryPlan::ExplainPlanOptions & options)
+{
+    const IQueryPlanStep & step = *node.step;
+
+    std::string prefix(settings.offset, ' ');
+    settings.out << prefix;
+    settings.out << step.getName();
+
+    const auto & description = step.getStepDescription();
+    if (options.description && !description.empty())
+        settings.out <<" (" << description << ')';
+
+    settings.out.write('\n');
+
+    if (options.header)
+    {
+        settings.out << prefix;
+
+        if (!step.hasOutputHeader())
+            settings.out << "No header";
+        else if (!step.getOutputHeader())
+            settings.out << "Empty header";
+        else
+        {
+            settings.out << "Header: ";
+            bool first = true;
+
+            for (const auto & elem : step.getOutputHeader())
+            {
+                if (!first)
+                    settings.out << "\n" << prefix << "        ";
+
+                first = false;
+                elem.dumpNameAndType(settings.out);
+            }
+        }
+        settings.out.write('\n');
+    }
+
+    if (options.statistics)
+    {
+        settings.out << prefix;
+        settings.out << "Statistics: ";
+        settings.out << node.statistics.getOutputRowSize();
+        settings.out.write('\n');
+    }
+
+    if (options.cost)
+    {
+        settings.out << prefix;
+        settings.out << "Cost: ";
+        settings.out << node.cost.toString();
+        settings.out.write('\n');
+    }
+
+    if (options.sorting)
+    {
+        if (const auto & sort_description = step.getSortDescription(); !sort_description.empty())
+        {
+            settings.out << prefix << "Sorting: ";
+            dumpSortDescription(sort_description, settings.out);
+            settings.out.write('\n');
+        }
+    }
+
+    if (options.actions)
+        step.describeActions(settings);
+
+    if (options.indexes)
+        step.describeIndexes(settings);
+}
+
 std::string debugExplainStep(const PlanNode & node)
 {
     WriteBufferFromOwnString out;
@@ -399,14 +395,7 @@ std::string debugExplainStep(const PlanNode & node)
     return out.str();
 }
 
-String QueryPlan::dumpPlan(ExplainPlanOptions options)
-{
-    WriteBufferFromOwnString buffer;
-    explainPlan(buffer, options);
-    return buffer.str();
-}
-
-void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent)
+void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent) const
 {
     checkInitialized();
 
@@ -422,11 +411,9 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
     std::stack<Frame> stack;
     stack.push(Frame{.node = root});
 
-    std::unordered_set<Node *> all_nodes;
-    for (auto & node : nodes)
-    {
+    std::unordered_set<const Node *> all_nodes;
+    for (const auto & node : nodes)
         all_nodes.insert(&node);
-    }
 
     while (!stack.empty() && all_nodes.contains(stack.top().node))
     {

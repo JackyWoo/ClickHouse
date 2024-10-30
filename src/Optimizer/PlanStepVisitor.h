@@ -1,8 +1,7 @@
 #pragma once
 
 #include <Interpreters/TableJoin.h>
-#include <Optimizer/GroupNode.h>
-#include <Optimizer/PhysicalProperties.h>
+#include <Optimizer/PhysicalProperty.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
@@ -45,7 +44,7 @@ public:
 
     virtual ~PlanStepVisitor() = default;
 
-    virtual R visit(QueryPlanStepPtr step)
+    virtual R visit(const QueryPlanStepPtr & step)
     {
         if (auto * scan_step = typeid_cast<ReadFromMergeTree *>(step.get()))
             return visit(*scan_step);

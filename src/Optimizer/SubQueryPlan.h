@@ -18,7 +18,7 @@ class SubQueryPlan : public QueryPlan
 public:
     using Base = QueryPlan;
 
-    SubQueryPlan() : Base() { }
+    SubQueryPlan() { }
     SubQueryPlan(SubQueryPlan &&) noexcept = default;
     ~SubQueryPlan() override = default;
     SubQueryPlan & operator=(SubQueryPlan &&) noexcept = default;
@@ -26,8 +26,9 @@ public:
     /// Add single step to sub query plan
     void addStep(QueryPlanStepPtr step) override;
 
-    /// Unite with other plans, used by queries like union, join etc.
+    /// nearly copy of PLan::
     void unitePlans(QueryPlanStepPtr step, std::vector<SubQueryPlanPtr> plans);
+
 };
 
 }

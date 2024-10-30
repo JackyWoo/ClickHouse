@@ -49,7 +49,7 @@ public:
 
     void setPhase(Phase phase_) { phase = phase_; }
 
-    const SortDescription & getSortDescription() const
+    const SortDescription & getSortDescription() const override
     {
         return description;
     }

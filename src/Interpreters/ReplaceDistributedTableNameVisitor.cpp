@@ -145,7 +145,7 @@ ReplaceDistributedTableNameVisitor::enter(ASTFunction & table_function, ASTPtr &
         if (auto sharding_key = storage_distributed->getShardingKey())
         {
             WriteBufferFromOwnString write_buffer;
-            IAST::FormatSettings settings(write_buffer, true, false, true);
+            IAST::FormatSettings settings(write_buffer, true, false);
             sharding_key->format(settings);
             sharding_keys.emplace_back(write_buffer.str());
         }
@@ -204,7 +204,7 @@ void ReplaceDistributedTableNameVisitor::enter(ASTTableIdentifier & table_ident,
             if (auto sharding_key = distributed_table->getShardingKey())
             {
                 WriteBufferFromOwnString write_buffer;
-                IAST::FormatSettings settings(write_buffer, true, false, true);
+                IAST::FormatSettings settings(write_buffer, true, false);
                 sharding_key->format(settings);
                 sharding_keys.emplace_back(write_buffer.str());
             }

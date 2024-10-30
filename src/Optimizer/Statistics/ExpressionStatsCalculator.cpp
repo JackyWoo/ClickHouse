@@ -47,13 +47,13 @@ ExpressionStatsCalculator::calculateStatistics(const ActionsDAG::Node * node, Ex
     return visitor.visit(node, context);
 }
 
-Stats ExpressionStatsCalculator::calculateStatistics(const ActionsDAGPtr & expressions, const Stats & input)
+Stats ExpressionStatsCalculator::calculateStatistics(const ActionsDAG & expressions, const Stats & input)
 {
     /// Expression (Before GROUP BY) maybe empty
-    if (expressions->getNodes().empty())
+    if (expressions.getNodes().empty())
         return input.clone();
 
-    auto & input_nodes = expressions->getInputs();
+    auto & input_nodes = expressions.getInputs();
     ExpressionNodeVisitor::VisitContext context;
 
     /// 1. init context
@@ -65,7 +65,7 @@ Stats ExpressionStatsCalculator::calculateStatistics(const ActionsDAGPtr & expre
         context.insert({input_node, {1.0, {}, node_stats_map}});
     }
 
-    auto & output_nodes = expressions->getOutputs();
+    auto & output_nodes = expressions.getOutputs();
 
     /// There may be no output nodes, for example:
     /// select count(*) from hits as t1 join hits as t2 on t1.WatchID = t2.WatchID * 2 where t2.WatchID > 1

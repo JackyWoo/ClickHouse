@@ -2,7 +2,7 @@
 
 #include <Optimizer/Cost/Cost.h>
 #include <Optimizer/Cost/CostSettings.h>
-#include <Optimizer/PhysicalProperties.h>
+#include <Optimizer/PhysicalProperty.h>
 #include <Optimizer/Tasks/OptimizeContext.h>
 
 namespace DB
@@ -15,14 +15,12 @@ using OptimizeTaskPtr = std::unique_ptr<OptimizeTask>;
 class TaskContext
 {
 public:
-    TaskContext(Group & group_, const PhysicalProperties & required_properties_, OptimizeContextPtr optimize_context_);
-
-    TaskContext(
-        Group & group_, const PhysicalProperties & required_properties_, OptimizeContextPtr optimize_context_, Cost upper_bound_cost_);
+    TaskContext(Group & group_, const PhysicalProperty & required_property_, OptimizeContextPtr optimize_context_);
+    TaskContext(Group & group_, const PhysicalProperty & required_property_, OptimizeContextPtr optimize_context_, Cost upper_bound_cost_);
 
     Group & getCurrentGroup();
 
-    const PhysicalProperties & getRequiredProp() const;
+    const PhysicalProperty & getRequiredProp() const;
 
     OptimizeContextPtr getOptimizeContext();
 
@@ -39,7 +37,7 @@ public:
 private:
     Group & group;
 
-    PhysicalProperties required_properties;
+    PhysicalProperty required_property;
 
     Cost upper_bound_cost;
 

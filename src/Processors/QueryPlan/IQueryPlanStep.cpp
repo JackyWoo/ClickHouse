@@ -27,6 +27,11 @@ void IQueryPlanStep::updateInputHeader(Header input_header, size_t idx)
     updateOutputHeader();
 }
 
+StepType IQueryPlanStep::stepType() const
+{
+    return StepType::PatternAny;
+}
+
 const Header & IQueryPlanStep::getOutputHeader() const
 {
     if (!hasOutputHeader())

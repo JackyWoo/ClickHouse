@@ -5,7 +5,6 @@
 #include <Interpreters/TableJoin.h>
 #include <Optimizer/Statistics/Stats.h>
 #include <Processors/QueryPlan/JoinStep.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -77,9 +76,9 @@ private:
         Stats calculate();
 
     private:
-        void calculateCrossJoin(Stats & statistics);
+        void calculateCrossJoin(Stats & statistics) const;
         /// asof join: not equal join
-        void calculateAsofJoin(Stats & statistics);
+        void calculateAsofJoin(Stats & statistics) const;
 
         void calculateInnerJoin(Stats & statistics, JoinStrictness strictness);
         /// JoinStrictness: any, all
@@ -127,13 +126,13 @@ private:
         Float64 calculateIntersectingRowCountForRight(Float64 intersecting_ndv);
 
         /// Whether join on key has columns whose statistics is unknown
-        bool hasUnknownStatsColumn();
+        bool hasUnknownStatsColumn() const;
 
         void removeNonOutputColumn(Stats & input);
 
         JoinStep & step;
 
-        /// Inputs, should never changed
+        /// Inputs, should never be changed
         const Stats & left_input;
         const Stats & right_input;
 

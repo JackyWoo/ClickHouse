@@ -17,6 +17,13 @@ class MergingAggregatedStep;
 class AggregatingStep : public ITransformingStep
 {
 public:
+    /// Only work with query coordination
+    enum Phase : uint8_t
+    {
+        Unknown,
+        Preliminary,
+    };
+
     AggregatingStep(
         const Header & input_header_,
         Aggregator::Params params_,
@@ -79,12 +86,11 @@ public:
     void enforceTwoLevelAgg();
 
     std::shared_ptr<AggregatingStep> makePreliminaryAgg(const Settings & settings) const;
+    std::shared_ptr<MergingAggregatedStep> makeMergingAggregatedStep(const Header & input_header_, const Settings & settings) const;
 
-    std::shared_ptr<MergingAggregatedStep> makeMergingAggregatedStep(const DataStream & input_stream_, const Settings & settings) const;
-
-    bool isPreliminaryAgg() const
+    bool isPreliminary() const
     {
-        return is_preliminary_agg;
+        return phase == Preliminary;
     }
 
     StepType stepType() const override
@@ -125,7 +131,7 @@ private:
 
     Processors aggregating;
 
-    bool is_preliminary_agg = false; // used to query coordination distribution
+    Phase phase = Unknown;
 };
 
 class AggregatingProjectionStep : public IQueryPlanStep

@@ -2,10 +2,10 @@
 #include <Formats/FormatFactory.h>
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectQueryCoordination.h>
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/ReplaceDistributedTableNameVisitor.h>
 #include <Optimizer/CostBasedOptimizer.h>
@@ -17,6 +17,7 @@
 #include <QueryCoordination/Fragments/FragmentBuilder.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
+#include "Core/Settings.h"
 
 
 namespace DB
@@ -27,6 +28,14 @@ namespace ErrorCodes
 extern const int NOT_IMPLEMENTED;
 extern const int LOGICAL_ERROR;
 extern const int INCORRECT_QUERY;
+}
+
+namespace Setting
+{
+extern const SettingsBool allow_experimental_analyzer;
+extern const SettingsBool use_index_for_in_with_subqueries;
+extern const SettingsBool optimize_trivial_count_query;
+extern const SettingsBool enable_global_with_statement;
 }
 
 namespace
@@ -44,7 +53,7 @@ bool optimizeTrivialCount(const ASTPtr & query, const Settings & settings)
             if (!select_query)
                 continue;
 
-            optimize_trivial_count = settings.optimize_trivial_count_query && !select_query->where() && !select_query->prewhere()
+            optimize_trivial_count = settings[Setting::optimize_trivial_count_query] && !select_query->where() && !select_query->prewhere()
                 && !select_query->groupBy() && !select_query->having() && !select_query->sampleSize() && !select_query->sampleOffset()
                 && !select_query->final();
 
@@ -114,12 +123,12 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY && !options_.is_subquery)
     {
         auto cloned_query = query_ptr->clone();
-        auto setting_changes = setIncompatibleSettings();
+        auto setting_changes = disableIncompatibleSettings();
 
         /// Expand CET in advance
         if (!options.is_subquery)
         {
-            if (context->getSettingsRef().enable_global_with_statement)
+            if (context->getSettingsRef()[Setting::enable_global_with_statement])
                 ApplyWithAliasVisitor().visit(cloned_query);
             ApplyWithSubqueryVisitor().visit(cloned_query);
         }
@@ -198,13 +207,14 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
     LOG_DEBUG(log, "{} query coordination", query_coordination_enabled ? "Enable" : "Disable");
 }
 
-/// Disable use_index_for_in_with_subqueries
-SettingsChanges InterpreterSelectQueryCoordination::setIncompatibleSettings()
+/// Disable use_index_for_in_with_subqueries to prevent building sets who are in filter in SQL compiling stage.
+/// TODO remove in the future
+SettingsChanges InterpreterSelectQueryCoordination::disableIncompatibleSettings() const
 {
     SettingsChanges changes;
-    if (context->getSettings().use_index_for_in_with_subqueries)
+    if (context->getSettingsRef()[Setting::use_index_for_in_with_subqueries])
     {
-        context->getSettings().use_index_for_in_with_subqueries = false;
+        context->setSetting("use_index_for_in_with_subqueries", String("false"));
         changes.setSetting("use_index_for_in_with_subqueries", true);
     }
     return changes;
@@ -218,7 +228,6 @@ static String formattedAST(const ASTPtr & ast)
     WriteBufferFromOwnString buf;
     IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true);
     ast_format_settings.hilite = false;
-    ast_format_settings.always_quote_identifiers = true;
     ast->format(ast_format_settings);
     return buf.str();
 }
@@ -228,7 +237,7 @@ void InterpreterSelectQueryCoordination::buildQueryPlanIfNeeded()
     if (plan.isInitialized())
         return;
 
-    if (context->getSettingsRef().allow_experimental_analyzer)
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
         plan = InterpreterSelectQueryAnalyzer(query_ptr, context, options).extractQueryPlan();
     else if (query_ptr->as<ASTSelectQuery>())
         InterpreterSelectQuery(query_ptr, context, options).buildQueryPlan(plan);

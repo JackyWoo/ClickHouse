@@ -24,7 +24,6 @@ void ApplyRule::execute()
     for (const auto & sub_plan : bind_sub_plans)
     {
         auto transformed_sub_plans = rule->transform(*sub_plan, getQueryContext());
-
         for (auto & transformed_sub_plan : transformed_sub_plans)
         {
             auto & group = task_context->getCurrentGroup();

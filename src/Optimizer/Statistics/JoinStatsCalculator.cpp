@@ -29,7 +29,7 @@ JoinStatsCalculator::Impl::Impl(JoinStep & step_, const Stats & left_input_, con
             right_join_on_keys.push_back(right_key);
     }
 
-    output_columns = step.getOutputStream().header.getNames();
+    output_columns = step.getOutputHeader().getNames();
 }
 
 Stats JoinStatsCalculator::Impl::calculate()
@@ -71,13 +71,13 @@ Stats JoinStatsCalculator::Impl::calculate()
     return statistics;
 }
 
-void JoinStatsCalculator::Impl::calculateCrossJoin(Stats & statistics)
+void JoinStatsCalculator::Impl::calculateCrossJoin(Stats & statistics) const
 {
     auto row_count = left_input.getOutputRowSize() * right_input.getOutputRowSize();
     statistics.setOutputRowSize(row_count);
 }
 
-void JoinStatsCalculator::Impl::calculateAsofJoin(Stats & statistics)
+void JoinStatsCalculator::Impl::calculateAsofJoin(Stats & statistics) const
 {
     statistics.reset();
 
@@ -230,7 +230,7 @@ void JoinStatsCalculator::Impl::calculateColumnStatsForFilterJoin(Stats & statis
         calculateColumnStatsForAnti(statistics, type == JoinKind::Left);
 }
 
-bool JoinStatsCalculator::Impl::hasUnknownStatsColumn()
+bool JoinStatsCalculator::Impl::hasUnknownStatsColumn() const
 {
     if (left_input.hasUnknownColumn(left_join_on_keys))
         return true;

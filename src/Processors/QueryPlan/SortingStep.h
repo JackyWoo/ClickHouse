@@ -15,9 +15,9 @@ public:
     /// Only work with query coordination
     enum Phase : uint8_t
     {
-        Final,
-        Preliminary,
         Unknown,
+        Preliminary,
+        Final,
     };
 
     enum class Type : uint8_t
@@ -113,15 +113,21 @@ public:
 
     std::shared_ptr<SortingStep> clone()
     {
+        std::shared_ptr<SortingStep> cloned;
         switch (type)
         {
             case Type::Full:
-                return std::make_shared<SortingStep>(input_streams[0], result_description, limit, sort_settings, optimize_sorting_by_input_stream_properties);
+                cloned = std::make_unique<SortingStep>(input_headers[0], result_description, limit, sort_settings);
+                break;
             case Type::FinishSorting:
-                return std::make_shared<SortingStep>(input_streams[0], prefix_description, result_description, sort_settings.max_block_size, limit);
+                cloned = std::make_unique<SortingStep>(input_headers[0], prefix_description, result_description, sort_settings.max_block_size, limit);
+                break;
             case Type::MergingSorted:
-                return std::make_shared<SortingStep>(input_streams[0], result_description, sort_settings.max_block_size, limit, always_read_till_end);
+                cloned = std::make_unique<SortingStep>(input_headers[0], result_description, sort_settings.max_block_size, limit, always_read_till_end);
+                break;
         }
+        cloned->setPhase(phase);
+        return cloned;
     }
 
     const SortDescription & getPrefixDescription() const

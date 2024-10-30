@@ -1,10 +1,18 @@
-#include <Optimizer/GroupStep.h>
 #include <Optimizer/Rule/SplitSort.h>
+
+#include <Core/Settings.h>
+#include <Optimizer/GroupStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+extern const SettingsUInt64 max_block_size;
+extern const SettingsBool exact_rows_before_limit;
+}
 
 SplitSort::SplitSort(size_t id_) : Rule(id_)
 {
@@ -31,17 +39,17 @@ std::vector<SubQueryPlan> SplitSort::transform(SubQueryPlan & sub_plan, ContextP
     pre_sort->setPhase(SortingStep::Phase::Preliminary);
     pre_sort->setStepDescription("Preliminary");
 
-    const auto max_block_size = context->getSettingsRef().max_block_size;
-    const auto exact_rows_before_limit = context->getSettingsRef().exact_rows_before_limit;
-    auto merging_sorted = std::make_unique<SortingStep>(
-        pre_sort->getOutputStream(), sorting_step->getSortDescription(), max_block_size, sorting_step->getLimit(), exact_rows_before_limit);
-    merging_sorted->setPhase(SortingStep::Phase::Final);
-    merging_sorted->setStepDescription("Final");
+    const auto max_block_size = context->getSettingsRef()[Setting::max_block_size];
+    const auto exact_rows_before_limit = context->getSettingsRef()[Setting::exact_rows_before_limit];
+    auto final_sort = std::make_shared<SortingStep>(
+        pre_sort->getOutputHeader(), sorting_step->getSortDescription(), max_block_size, sorting_step->getLimit(), exact_rows_before_limit);
+    final_sort->setPhase(SortingStep::Phase::Final);
+    final_sort->setStepDescription("Final");
 
     SubQueryPlan res_sub_plan;
     res_sub_plan.addStep(child_step);
     res_sub_plan.addStep(pre_sort);
-    res_sub_plan.addStep(std::move(merging_sorted));
+    res_sub_plan.addStep(std::move(final_sort));
 
     std::vector<SubQueryPlan> res;
     res.emplace_back(std::move(res_sub_plan));

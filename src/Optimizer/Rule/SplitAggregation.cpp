@@ -1,7 +1,6 @@
 #include <Optimizer/GroupStep.h>
 #include <Optimizer/Rule/SplitAggregation.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Common/typeid_cast.h>
 
@@ -21,10 +20,10 @@ std::vector<SubQueryPlan> SplitAggregation::transform(SubQueryPlan & sub_plan, C
     if (!aggregate_step)
         return {};
 
-    if (aggregate_step->isPreliminaryAgg())
+    if (aggregate_step->isPreliminary())
         return {};
 
-    auto child_step = sub_plan.getRootNode()->children[0]->step;
+    auto & child_step = sub_plan.getRootNode()->children[0]->step;
     auto * group_step = typeid_cast<GroupStep *>(child_step.get());
     if (!group_step)
         return {};
@@ -32,8 +31,8 @@ std::vector<SubQueryPlan> SplitAggregation::transform(SubQueryPlan & sub_plan, C
     const Settings & settings = context->getSettingsRef();
     auto partial_agg_step = aggregate_step->makePreliminaryAgg(settings);
 
-    std::shared_ptr<MergingAggregatedStep> merge_agg_step
-        = aggregate_step->makeMergingAggregatedStep(partial_agg_step->getOutputStream(), settings);
+    auto merge_agg_step
+        = aggregate_step->makeMergingAggregatedStep(partial_agg_step->getOutputHeader(), settings);
 
     SubQueryPlan res_sub_plan;
     res_sub_plan.addStep(child_step);

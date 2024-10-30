@@ -60,13 +60,10 @@ void ExchangeDataSink::consume(Chunk chunk)
         block.insert({column->getPtr(), std::make_shared<DataTypeUInt64>(), "_empty_header_rows"});
     }
 
-    if (auto chunk_info = chunk.getChunkInfo())
+    if (auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>())
     {
-        if (const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(chunk_info.get()))
-        {
-            block.info.bucket_num = agg_info->bucket_num;
-            block.info.is_overflows = agg_info->is_overflows;
-        }
+        block.info.bucket_num = agg_info->bucket_num;
+        block.info.is_overflows = agg_info->is_overflows;
     }
 
     if (output_distribution.type == Distribution::Singleton || output_distribution.type == Distribution::Replicated)

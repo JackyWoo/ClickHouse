@@ -1,43 +1,50 @@
 #pragma once
 
-#include <Optimizer/PhysicalProperties.h>
+#include <Optimizer/PhysicalProperty.h>
 #include <Optimizer/PlanStepVisitor.h>
+
+#include "GroupNode.h"
 
 namespace DB
 {
 
-class DeriveOutputProp : public PlanStepVisitor<PhysicalProperties>
+class DeriveOutputProp : public PlanStepVisitor<PhysicalProperty>
 {
 public:
-    using Base = PlanStepVisitor<PhysicalProperties>;
+    using Base = PlanStepVisitor<PhysicalProperty>;
 
     DeriveOutputProp(
-        GroupNodePtr group_node_,
-        const PhysicalProperties & required_prop_,
-        const std::vector<PhysicalProperties> & children_prop_,
+        const PhysicalProperty & required_prop_,
+        const ChildProperties & children_prop_,
         ContextPtr context_);
 
-    PhysicalProperties visit(QueryPlanStepPtr step) override;
+    PhysicalProperty visit(const QueryPlanStepPtr & step) override;
 
-    PhysicalProperties visitDefault(IQueryPlanStep & step) override;
+    PhysicalProperty visitDefault(IQueryPlanStep & step) override;
 
-    PhysicalProperties visit(ReadFromMergeTree & step) override;
+    PhysicalProperty visit(ReadFromMergeTree & step) override;
 
-    PhysicalProperties visit(SortingStep & step) override;
+    PhysicalProperty visit(FilterStep & step) override;
 
-    PhysicalProperties visit(ExchangeDataStep & step) override;
+    PhysicalProperty visit(SortingStep & step) override;
 
-    PhysicalProperties visit(ExpressionStep & step) override;
+    PhysicalProperty visit(ExchangeDataStep & step) override;
 
-    PhysicalProperties visit(TopNStep & step) override;
+    PhysicalProperty visit(ExpressionStep & step) override;
 
-    PhysicalProperties visit(UnionStep & step) override;
+    PhysicalProperty visit(TopNStep & step) override;
+
+    PhysicalProperty visit(UnionStep & step) override;
+
+    PhysicalProperty visit(AggregatingStep & step) override;
+
+    PhysicalProperty visit(MergingAggregatedStep & step) override;
+
+    PhysicalProperty visit(DistinctStep & step) override;
 
 private:
-    GroupNodePtr group_node;
-
-    PhysicalProperties required_prop;
-    std::vector<PhysicalProperties> children_prop;
+    PhysicalProperty required_prop;
+    ChildProperties child_properties;
 
     ContextPtr context;
 };

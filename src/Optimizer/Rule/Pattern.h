@@ -10,7 +10,7 @@ class Pattern
 {
 public:
     Pattern() = default;
-    Pattern(StepType step_type_);
+    explicit Pattern(StepType step_type_);
 
     Pattern & addChildren(const std::vector<Pattern> & children_);
 

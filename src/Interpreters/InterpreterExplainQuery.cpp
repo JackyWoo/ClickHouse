@@ -34,12 +34,15 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 
+#include <Interpreters/InterpreterSelectQueryCoordination.h>
+
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_statistics_optimize;
+    extern const SettingsBool allow_experimental_query_coordination;
 }
 
 namespace ErrorCodes
@@ -215,6 +218,28 @@ struct QueryPlanSettings
             {"optimize", optimize},
             {"json", json},
             {"sorting", query_plan_options.sorting},
+            {"statistics", query_plan_options.statistics},
+               {"cost", query_plan_options.cost},
+    };
+
+    std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
+};
+
+/// Distributed query plan settings
+struct FragmentSettings
+{
+    Fragment::ExplainFragmentOptions fragment_options;
+
+    constexpr static char name[] = "FRAGMENT";
+
+    std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
+    {
+        {"header", fragment_options.header},
+        {"description", fragment_options.description},
+        {"actions", fragment_options.actions},
+        {"indexes", fragment_options.indexes},
+        {"sorting", fragment_options.sorting},
+        {"host", fragment_options.host},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -456,7 +481,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             ContextPtr context;
 
-            if (getContext()->getSettingsRef().allow_experimental_query_coordination)
+            if (getContext()->getSettingsRef()[Setting::allow_experimental_query_coordination])
             {
                 InterpreterSelectQueryCoordination interpreter(ast.getExplainedQuery(), getContext(), options);
                 interpreter.explain(buf, settings.query_plan_options, settings.json, settings.optimize);
@@ -506,7 +531,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN fragment");
 
-            if (!getContext()->getSettingsRef().allow_experimental_query_coordination)
+            if (!getContext()->getSettingsRef()[Setting::allow_experimental_query_coordination])
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only query with coordination is supported for EXPLAIN fragment, you can enable it by setting allow_experimental_query_coordination=1.");
 
             {

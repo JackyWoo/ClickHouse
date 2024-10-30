@@ -36,7 +36,7 @@ class PlannerContext;
 using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 
 class IQueryPlanStep;
-using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
+using QueryPlanStepPtr = std::shared_ptr<IQueryPlanStep>;
 
 namespace ClusterProxy
 {

@@ -40,7 +40,7 @@ private:
 class ExpressionStatsCalculator
 {
 public:
-    static Stats calculateStatistics(const ActionsDAGPtr & expression, const Stats & input);
+    static Stats calculateStatistics(const ActionsDAG & expression, const Stats & input);
     static ActionNodeStatistics calculateStatistics(const ActionsDAG::Node * node, ExpressionNodeVisitor::ContextType & context);
 };
 

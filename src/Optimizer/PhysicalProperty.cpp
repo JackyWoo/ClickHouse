@@ -1,23 +1,23 @@
-#include <Optimizer/PhysicalProperties.h>
+#include <Optimizer/PhysicalProperty.h>
 
 namespace DB
 {
 
-String SortProp::toString() const
+String Sorting::toString() const
 {
     String ret;
     switch (sort_scope)
     {
-        case DataStream::SortScope::None:
+        case Scope::None:
             ret += "None";
             break;
-        case DataStream::SortScope::Stream:
+        case Scope::Stream:
             ret += "Stream";
             break;
-        case DataStream::SortScope::Global:
+        case Scope::Global:
             ret += "Global";
             break;
-        case DataStream::SortScope::Chunk:
+        case Scope::Chunk:
             ret += "Chunk";
             break;
     }
@@ -53,15 +53,15 @@ String Distribution::toString() const
     }
 }
 
-bool PhysicalProperties::operator==(const PhysicalProperties & other) const
+bool PhysicalProperty::operator==(const PhysicalProperty & other) const
 {
-    if (sort_prop.sort_description.size() != other.sort_prop.sort_description.size())
+    if (sorting.sort_description.size() != other.sorting.sort_description.size())
         return false;
 
-    if (sort_prop.sort_description.size() != commonPrefix(sort_prop.sort_description, other.sort_prop.sort_description).size())
+    if (sorting.sort_description.size() != commonPrefix(sorting.sort_description, other.sorting.sort_description).size())
         return false;
 
-    if (sort_prop.sort_scope != other.sort_prop.sort_scope)
+    if (sorting.sort_scope != other.sorting.sort_scope)
         return false;
 
     if (other.distribution.keys.size() != distribution.keys.size())
@@ -77,23 +77,23 @@ bool PhysicalProperties::operator==(const PhysicalProperties & other) const
     return distribution.type == other.distribution.type;
 }
 
-bool PhysicalProperties::satisfy(const PhysicalProperties & required) const
+bool PhysicalProperty::satisfy(const PhysicalProperty & required) const
 {
-    bool satisfy_sort = satisfySorting(required);
-    bool satisfy_distribute = satisfyDistribution(required);
+    bool satisfy_sorting = satisfySorting(required);
+    bool satisfy_distribution = satisfyDistribution(required);
 
-    return satisfy_sort && satisfy_distribute;
+    return satisfy_sorting && satisfy_distribution;
 }
 
-bool PhysicalProperties::satisfySorting(const PhysicalProperties & required) const
+bool PhysicalProperty::satisfySorting(const PhysicalProperty & required) const
 {
-    bool sort_description_satisfy = required.sort_prop.sort_description.size()
-        == commonPrefix(sort_prop.sort_description, required.sort_prop.sort_description).size();
+    bool sort_description_satisfy = required.sorting.sort_description.size()
+        == commonPrefix(sorting.sort_description, required.sorting.sort_description).size();
 
     if (!sort_description_satisfy)
         return false;
 
-    bool sort_scope_satisfy = sort_prop.sort_scope >= required.sort_prop.sort_scope;
+    bool sort_scope_satisfy = sorting.sort_scope >= required.sorting.sort_scope;
 
     if (!sort_scope_satisfy)
         return false;
@@ -101,7 +101,7 @@ bool PhysicalProperties::satisfySorting(const PhysicalProperties & required) con
     return true;
 }
 
-bool PhysicalProperties::satisfyDistribution(const PhysicalProperties & required) const
+bool PhysicalProperty::satisfyDistribution(const PhysicalProperty & required) const
 {
     if (required.distribution.type == Distribution::Any)
         return true;
@@ -116,22 +116,38 @@ bool PhysicalProperties::satisfyDistribution(const PhysicalProperties & required
     return distribution.type == required.distribution.type;
 }
 
-String PhysicalProperties::toString() const
+String PhysicalProperty::toString() const
 {
-    return distribution.toString() + "-" + sort_prop.toString();
+    return distribution.toString() + "-" + sorting.toString();
 }
 
-String toString(std::vector<PhysicalProperties> properties_list)
+String PhysicalProperty::toString(const PhysicalProperties & properties)
 {
-    if (properties_list.empty())
-        return {};
+    if (properties.empty())
+        return "[]";
 
-    String ret = properties_list[0].toString();
-    for (size_t i = 1; i < properties_list.size(); ++i)
+    String ret = "[" + properties[0].toString();
+    for (size_t i = 1; i < properties.size(); ++i)
+    {
+        ret += ",";
+        ret += properties[i].toString();
+    }
+    ret += "]";
+    return ret;
+}
+
+String PhysicalProperty::toString(const std::vector<PhysicalProperties> & properties)
+{
+    if (properties.empty())
+        return "[]";
+
+    String ret = "[" + toString(properties[0]);
+    for (size_t i = 1; i < properties.size(); ++i)
     {
         ret += "/";
-        ret += properties_list[i].toString();
+        ret += toString(properties[i]);
     }
+    ret += "]";
     return ret;
 }
 

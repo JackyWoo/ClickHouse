@@ -29,21 +29,20 @@ void Group::addGroupNode(GroupNodePtr group_node, UInt32 group_node_id)
     group_nodes.emplace_back(std::move(group_node));
 }
 
-std::optional<std::pair<PhysicalProperties, Group::NodeAndCost>>
-Group::getSatisfiedBestGroupNode(const PhysicalProperties & required_properties) const
+std::optional<std::pair<PhysicalProperty, Group::NodeAndCost>> Group::tryGetBest(const PhysicalProperty & required_property) const
 {
     /// Use a NaN
     auto min_cost = std::numeric_limits<Float64>::max() + 1.0;
-    std::pair<PhysicalProperties, NodeAndCost> res;
+    std::pair<PhysicalProperty, NodeAndCost> res;
 
-    for (const auto & [properties, group_node_cost] : prop_to_best)
+    for (const auto & [property, group_node_cost] : prop_to_best)
     {
-        if (properties.satisfy(required_properties))
+        if (property.satisfy(required_property))
         {
             if (group_node_cost.cost.get() < min_cost)
             {
                 min_cost = group_node_cost.cost.get();
-                res.first = properties;
+                res.first = property;
                 res.second = group_node_cost;
             }
         }
@@ -55,19 +54,21 @@ Group::getSatisfiedBestGroupNode(const PhysicalProperties & required_properties)
     return {res};
 }
 
-bool Group::updatePropBestNode(const PhysicalProperties & properties, GroupNodePtr group_node, Cost cost)
+bool Group::updateBest(const PhysicalProperty & property, GroupNodePtr group_node, Cost cost)
 {
-    if (!prop_to_best.contains(properties) || cost < prop_to_best[properties].cost)
+    if (!prop_to_best.contains(property) || cost < prop_to_best[property].cost)
     {
-        prop_to_best[properties] = {group_node, cost};
+        prop_to_best[property] = {group_node, cost};
         return true;
     }
     return false;
 }
 
-Cost Group::getCostByProp(const PhysicalProperties & properties)
+std::optional<Cost> Group::getLowestCost(const PhysicalProperty & property)
 {
-    return prop_to_best[properties].cost;
+    if (auto best = tryGetBest(property))
+        return best->second.cost;
+    return {};
 }
 
 UInt32 Group::getId() const

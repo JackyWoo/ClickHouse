@@ -1,14 +1,15 @@
+#include <QueryCoordination/Coordinator.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <QueryCoordination/Coordinator.h>
 #include <QueryCoordination/Exchange/ExchangeDataStep.h>
 #include <QueryCoordination/Fragments/DistributedFragmentBuilder.h>
 #include <QueryCoordination/QueryCoordinationMetaInfo.h>
 #include <QueryCoordination/fragmentsToPipelines.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Common/ConcurrentBoundedQueue.h>
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
@@ -16,6 +17,12 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int SYSTEM_ERROR;
+}
+
+namespace Setting
+{
+extern const SettingsSeconds max_execution_time;
+extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
 }
 
 Coordinator::Coordinator(const FragmentPtrs & fragments_, ContextMutablePtr context_, String query_)
@@ -48,8 +55,8 @@ void Coordinator::schedulePrepareDistributedPipelines()
 
 PoolBase<DB::Connection>::Entry Coordinator::getConnection(const Cluster::ShardInfo & shard_info, const QualifiedTableName & table_name)
 {
-    auto current_settings = context->getSettingsRef();
-    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings).getSaturated(current_settings.max_execution_time);
+    const auto & current_settings = context->getSettingsRef();
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings).getSaturated(current_settings[Setting::max_execution_time]);
     auto try_results = shard_info.pool->getManyChecked(timeouts, current_settings, PoolMode::GET_ONE, table_name);
     return try_results[0].entry;
 }
@@ -57,7 +64,7 @@ PoolBase<DB::Connection>::Entry Coordinator::getConnection(const Cluster::ShardI
 PoolBase<DB::Connection>::Entry Coordinator::getConnection(const Cluster::ShardInfo & shard_info)
 {
     auto current_settings = context->getSettingsRef();
-    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings).getSaturated(current_settings.max_execution_time);
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings).getSaturated(current_settings[Setting::max_execution_time]);
     auto try_results = shard_info.pool->getMany(timeouts, current_settings, PoolMode::GET_ONE);
     return try_results[0];
 }
@@ -199,7 +206,7 @@ bool Coordinator::isUpToDate(const QualifiedTableName & table_name)
         status.is_replicated = false;
 
     bool is_up_to_date;
-    UInt64 max_allowed_delay = UInt64(context->getSettingsRef().max_replica_delay_for_distributed_queries);
+    UInt64 max_allowed_delay = UInt64(context->getSettingsRef()[Setting::max_replica_delay_for_distributed_queries]);
     if (!max_allowed_delay)
     {
         is_up_to_date = true;
@@ -262,8 +269,8 @@ void Coordinator::sendFragmentsToPreparePipelines()
     for (const auto & [f_id, request] : fragment_requests)
         LOG_DEBUG(log, "Send fragment to distributed request {}", request.toString());
 
-    auto current_settings = context->getSettingsRef();
-    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings).getSaturated(current_settings.max_execution_time);
+    const auto & current_settings = context->getSettingsRef();
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings).getSaturated(current_settings[Setting::max_execution_time]);
 
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;

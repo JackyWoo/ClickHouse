@@ -12,7 +12,7 @@ QueryPlan CostBasedOptimizer::optimize(QueryPlan && plan, ContextPtr query_conte
 {
     /// init memo by plan
     Memo memo(std::move(plan), query_context);
-    PhysicalProperties initial_prop{.distribution = {.type = Distribution::Singleton}};
+    PhysicalProperty initial_prop{.distribution = {.type = Distribution::Singleton}};
 
     /// init scheduler
     Scheduler scheduler(3000); /// TODO add to Settings

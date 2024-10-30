@@ -1,14 +1,10 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Formats/LazyOutputFormat.h>
-#include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <QueryCoordination/Pipelines/CompletedPipelinesExecutor.h>
 #include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
 #include <QueryCoordination/QueryCoordinationExecutor.h>
-#include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/ReadProgressCallback.h>
-#include <Common/setThreadName.h>
 
 namespace DB
 {

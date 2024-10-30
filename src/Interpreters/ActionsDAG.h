@@ -490,6 +490,8 @@ private:
     NameToNodeIndex index;
 };
 
+using ActionsDAGPtr = std::unique_ptr<ActionsDAG>;
+
 /// This is an ugly way to bypass impossibility to forward declare ActionDAG::Node.
 struct ActionDAGNodes
 {
@@ -506,5 +508,18 @@ struct ActionsAndProjectInputsFlag
 };
 
 using ActionsAndProjectInputsFlagPtr = std::shared_ptr<ActionsAndProjectInputsFlag>;
+
+class FindOutputByName
+{
+    using NameToNodeIndex = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
+
+public:
+    explicit FindOutputByName(const ActionsDAG & actions);
+    const ActionsDAG::Node * find(const String & name);
+
+private:
+    const ActionsDAG & actions;
+    NameToNodeIndex index;
+};
 
 }

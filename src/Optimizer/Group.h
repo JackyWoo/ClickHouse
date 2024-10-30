@@ -2,7 +2,7 @@
 
 #include <Optimizer/Cost/Cost.h>
 #include <Optimizer/GroupNode.h>
-#include <Optimizer/PhysicalProperties.h>
+#include <Optimizer/PhysicalProperty.h>
 #include <Optimizer/Statistics/Stats.h>
 
 namespace DB
@@ -30,12 +30,10 @@ public:
     const std::vector<GroupNodePtr> & getGroupNodes() const;
     std::vector<GroupNodePtr> & getGroupNodes();
 
-    bool updatePropBestNode(const PhysicalProperties & properties, GroupNodePtr group_node, Cost cost);
+    bool updateBest(const PhysicalProperty & property, GroupNodePtr group_node, Cost cost);
+    std::optional<std::pair<PhysicalProperty, Group::NodeAndCost>> tryGetBest(const PhysicalProperty & required_property) const;
 
-    Cost getCostByProp(const PhysicalProperties & properties);
-
-    std::optional<std::pair<PhysicalProperties, Group::NodeAndCost>>
-    getSatisfiedBestGroupNode(const PhysicalProperties & required_properties) const;
+    std::optional<Cost> getLowestCost(const PhysicalProperty & property);
 
     UInt32 getId() const;
 
@@ -53,7 +51,7 @@ private:
     std::vector<GroupNodePtr> group_nodes;
 
     /// optimize temp result
-    std::unordered_map<PhysicalProperties, NodeAndCost, PhysicalProperties::HashFunction> prop_to_best;
+    std::unordered_map<PhysicalProperty, NodeAndCost, PhysicalProperty::HashFunction> prop_to_best;
 
     Stats statistics;
     bool stats_derived = false;

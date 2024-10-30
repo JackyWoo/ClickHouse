@@ -867,6 +867,9 @@ public:
     void setDistributedForQueryCoord(bool is_distributed_for_query_coord) { is_distributed_for_query_coordination = is_distributed_for_query_coord; }
     bool isDistributedForQueryCoord() const { return is_distributed_for_query_coordination; }
 
+    IStatisticsStoragePtr & getStatisticsStorage() const;
+    void initializeStatisticsStorage(UInt64 refresh_interval);
+
     String getDefaultFormat() const;    /// If default_format is not specified, some global default format is returned.
     void setDefaultFormat(const String & name);
 

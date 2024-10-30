@@ -24,7 +24,7 @@ public:
         node_count = cluster->getShardCount();
     }
 
-    Stats visit(QueryPlanStepPtr step) override;
+    Stats visit(const QueryPlanStepPtr & step) override;
 
     Stats visitDefault(IQueryPlanStep & step) override;
 

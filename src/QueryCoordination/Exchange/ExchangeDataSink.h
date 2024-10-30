@@ -3,7 +3,7 @@
 #include <Client/Connection.h>
 #include <Client/ConnectionPool.h>
 #include <Core/ColumnNumbers.h>
-#include <Optimizer/PhysicalProperties.h>
+#include <Optimizer/PhysicalProperty.h>
 #include <Processors/ISink.h>
 #include <QueryCoordination/Exchange/ExchangeDataRequest.h>
 

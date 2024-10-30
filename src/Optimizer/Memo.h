@@ -12,16 +12,17 @@ class Memo
 public:
     Memo(QueryPlan && plan, ContextPtr context_);
 
-    GroupNodePtr addPlanNodeToGroup(const QueryPlan::Node & node, Group * target_group);
-
+    /// Initialize memo by a query plan
     Group & buildGroup(const QueryPlan::Node & node);
 
-    void dump();
+    GroupNodePtr addPlanNodeToGroup(const QueryPlan::Node & node, Group * target_group);
 
-    Group & rootGroup();
+    void dump() const;
+
+    Group & rootGroup() const;
 
     QueryPlan extractPlan();
-    SubQueryPlan extractPlan(Group & group, const PhysicalProperties & required_properties);
+    SubQueryPlan extractPlan(Group & group, const PhysicalProperty & required_prop);
 
     UInt32 fetchAddGroupNodeId() { return ++group_node_id_counter; }
 

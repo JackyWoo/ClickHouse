@@ -451,7 +451,7 @@ void collectColumnStats(const StorageID & storage_id, const Names & columns, Con
 
         auto insert_context = Context::createCopy(Context::getGlobalContextInstance());
         insert_context->makeQueryContext();
-        InterpreterInsertQuery insert_interpreter(insert_ast, insert_context);
+        InterpreterInsertQuery insert_interpreter(insert_ast, insert_context, false, false, false, false);
         BlockIO io = insert_interpreter.execute();
 
         PushingPipelineExecutor insert_executor(io.pipeline);

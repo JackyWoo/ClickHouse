@@ -80,6 +80,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool insert_allow_materialized_columns;
+    extern const SettingsBool allow_experimental_query_coordination;
 }
 
 namespace ErrorCodes
@@ -125,7 +126,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
 
     if (query->as<ASTSelectQuery>())
     {
-        if (context->getSettingsRef().allow_experimental_query_coordination)
+        if (context->getSettingsRef()[Setting::allow_experimental_query_coordination])
             interpreter_name = "InterpreterSelectQueryCoordination";
         else if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
             interpreter_name = "InterpreterSelectQueryAnalyzer";
@@ -138,7 +139,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         ProfileEvents::increment(ProfileEvents::SelectQuery);
 
-        if (context->getSettingsRef().allow_experimental_query_coordination)
+        if (context->getSettingsRef()[Setting::allow_experimental_query_coordination])
             interpreter_name = "InterpreterSelectQueryCoordination";
         else if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
             interpreter_name = "InterpreterSelectQueryAnalyzer";

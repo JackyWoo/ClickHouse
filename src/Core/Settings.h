@@ -100,7 +100,9 @@ class WriteBuffer;
     M(CLASS_NAME, TransactionsWaitCSNMode) \
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, UInt64Auto) \
-    M(CLASS_NAME, URI)
+    M(CLASS_NAME, URI) \
+    M(CLASS_NAME, CBOStepExecutionMode) \
+    M(CLASS_NAME, CBOJoinDistributionMode)
 
 
 COMMON_SETTINGS_SUPPORTED_TYPES(Settings, DECLARE_SETTING_TRAIT)

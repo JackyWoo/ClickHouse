@@ -24,7 +24,7 @@ void DeriveStats::execute()
 
         for (auto * child_group : group_node->getChildren())
         {
-            PhysicalProperties any_prop;
+            PhysicalProperty any_prop;
             TaskContextPtr child_task_context = std::make_shared<TaskContext>(*child_group, any_prop, task_context->getOptimizeContext());
             for (auto & child_node : child_group->getGroupNodes())
             {

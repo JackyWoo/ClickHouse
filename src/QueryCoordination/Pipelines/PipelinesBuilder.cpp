@@ -9,6 +9,12 @@
 namespace DB
 {
 
+namespace Setting
+{
+extern const SettingsUInt64 max_threads;
+extern const SettingsSeconds max_execution_time;
+}
+
 Pipelines PipelinesBuilder::build()
 {
     Pipelines pipelines;
@@ -43,7 +49,7 @@ Pipelines PipelinesBuilder::build()
             if (target_host_port.empty())
                 continue;
 
-            auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings).getSaturated(settings.max_execution_time);
+            auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings).getSaturated(settings[Setting::max_execution_time]);
             auto connection = shards_info[i].pool->getOne(timeouts, settings, target_host_port);
 
             LOG_DEBUG(log, "Fragment {} will actually send data to {}", fragment->getFragmentID(), connection->getHostPort());
@@ -95,7 +101,7 @@ Pipelines PipelinesBuilder::build()
             pipelines.addSourcesPipeline(fragment->getFragmentID(), std::move(pipeline));
     }
 
-    pipelines.assignThreadNum(settings.max_threads);
+    pipelines.assignThreadNum(settings[Setting::max_threads]);
 
     return pipelines;
 }

@@ -20,7 +20,7 @@ struct CostSettings
     /// Weight of data transferring in cost model.
     Float64 cost_net_weight;
 
-    /// Weight of an single operation of preliminary sorting or topn step.
+    /// Weight of a single operation of preliminary sorting or topn step.
     Float64 cost_pre_sorting_operation_weight;
 
     /// Weight of uniq and uniqExact agg function in merging stage. Uniq and
@@ -29,7 +29,7 @@ struct CostSettings
     /// stage aggregating.
     Float64 cost_merge_agg_uniq_calculation_weight;
 
-    Cost::Weight getCostWeight();
+    Cost::Weight getCostWeight() const;
 
     static CostSettings fromSettings(const Settings & from);
     static CostSettings fromContext(ContextPtr from);

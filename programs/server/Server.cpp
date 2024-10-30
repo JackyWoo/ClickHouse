@@ -279,6 +279,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 uncompressed_cache_size;
     extern const ServerSettingsDouble uncompressed_cache_size_ratio;
     extern const ServerSettingsBool use_legacy_mongodb_integration;
+    extern const ServerSettingsUInt64 background_statistics_refresh_period_sec;
+    extern const ServerSettingsBool enable_background_statistics;
 }
 
 }
@@ -1594,9 +1596,9 @@ try
     }
     global_context->setMMappedFileCache(mmap_cache_size);
 
-    if (server_settings.enable_background_statistics)
+    if (server_settings[ServerSetting::enable_background_statistics])
     {
-        global_context->initializeStatisticsStorage(server_settings.background_statistics_refresh_period_sec);
+        global_context->initializeStatisticsStorage(server_settings[ServerSetting::background_statistics_refresh_period_sec]);
         LOG_INFO(log, "Statistics storage initialized");
     }
 

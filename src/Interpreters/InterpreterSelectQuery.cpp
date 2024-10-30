@@ -42,7 +42,6 @@
 #include <Interpreters/RewriteCountDistinctVisitor.h>
 #include <Interpreters/RewriteUniqToCountVisitor.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
-#include <Interpreters/addBuildSubqueriesForSetsStep.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -80,7 +79,6 @@
 #include <Storages/StorageValues.h>
 #include <Storages/StorageView.h>
 
-#include <Columns/ColumnSet.h>
 #include <Columns/Collator.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
@@ -100,7 +98,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
-
+#include <Interpreters/addBuildSubqueriesForSetsStep.h>
 
 namespace ProfileEvents
 {
@@ -1553,43 +1551,6 @@ static bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
     return false;
 }
 
-void addBuildSubqueriesForSetsStep(
-    QueryPlan & query_plan,
-    ContextPtr context,
-    PreparedSets & prepared_sets,
-    const std::vector<ActionsDAGPtr> & result_actions_to_execute)
-{
-    PreparedSets::Subqueries subqueries;
-    for (const auto & actions_to_execute : result_actions_to_execute)
-    {
-        if (!actions_to_execute)
-            continue;
-
-        for (const auto & node : actions_to_execute->getNodes())
-        {
-            const auto & set_column = node.column;
-
-            for (const auto & future_set_from_subquery : prepared_sets.getSubqueries())
-            {
-                if (const auto * set_column_ptr = dynamic_cast<const ColumnSet *>(set_column.get()))
-                {
-                    const auto * set_from_subquery = dynamic_cast<const FutureSetFromSubquery *>(set_column_ptr->getData().get());
-                    if (set_from_subquery->getSetAndKey()->key == future_set_from_subquery->getSetAndKey()->key)
-                    {
-                        subqueries.emplace_back(future_set_from_subquery);
-                    }
-                }
-            }
-        }
-    }
-
-    if (!subqueries.empty())
-    {
-        auto step = std::make_unique<DelayedCreatingSetsStep>(query_plan.getCurrentDataStream(), std::move(subqueries), context);
-        query_plan.addStep(std::move(step));
-    }
-}
-
 void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<Pipe> prepared_pipe)
 {
     ProfileEvents::increment(ProfileEvents::SelectQueriesWithSubqueries);
@@ -1706,8 +1667,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         /// Read the data from Storage. from_stage - to what stage the request was completed in Storage.
         executeFetchColumns(from_stage, query_plan);
 
-        if (query_info.prewhere_info && query_info.prewhere_info->prewhere_actions && context->isDistributedForQueryCoord())
-            addBuildSubqueriesForSetsStep(query_plan, context, *prepared_sets, {query_info.prewhere_info->prewhere_actions});
+        if (query_info.prewhere_info && context->isDistributedForQueryCoord())
+            addBuildSubqueriesForSetsStep(query_plan, context, *prepared_sets, {&query_info.prewhere_info->prewhere_actions});
 
         LOG_TRACE(log, "{} -> {}", QueryProcessingStage::toString(from_stage), QueryProcessingStage::toString(options.to_stage));
     }
@@ -2779,7 +2740,7 @@ void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsA
     query_plan.addStep(std::move(where_step));
 
     if (context->isDistributedForQueryCoord())
-        addBuildSubqueriesForSetsStep(query_plan, context, *prepared_sets, {dag});
+        addBuildSubqueriesForSetsStep(query_plan, context, *prepared_sets, {&dag});
 }
 
 static Aggregator::Params getAggregatorParams(
@@ -2932,7 +2893,7 @@ void InterpreterSelectQuery::executeHaving(QueryPlan & query_plan, const Actions
     query_plan.addStep(std::move(having_step));
 
     if (context->isDistributedForQueryCoord())
-        addBuildSubqueriesForSetsStep(query_plan, context, *prepared_sets, {dag});
+        addBuildSubqueriesForSetsStep(query_plan, context, *prepared_sets, {&dag});
 }
 
 
@@ -2968,7 +2929,7 @@ void InterpreterSelectQuery::executeTotalsAndHaving(
     query_plan.addStep(std::move(totals_having_step));
 
     if (context->isDistributedForQueryCoord())
-        addBuildSubqueriesForSetsStep(query_plan, context, *prepared_sets, {expression->dag.clone()});
+        addBuildSubqueriesForSetsStep(query_plan, context, *prepared_sets, {&expression->dag});
 }
 
 void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modificator modificator)
@@ -3009,7 +2970,7 @@ void InterpreterSelectQuery::executeExpression(QueryPlan & query_plan, const Act
     query_plan.addStep(std::move(expression_step));
 
     if (context->isDistributedForQueryCoord())
-        addBuildSubqueriesForSetsStep(query_plan, context, *prepared_sets, {dag});
+        addBuildSubqueriesForSetsStep(query_plan, context, *prepared_sets, {&dag});
 }
 
 static bool windowDescriptionComparator(const WindowDescription * _left, const WindowDescription * _right)

@@ -24,7 +24,7 @@ public:
         const Stats & statistics_,
         TaskContextPtr task_context_,
         const std::vector<Stats> & input_statistics_ = {},
-        const ChildrenProp & child_props_ = {})
+        const ChildProperties & child_props_ = {})
         : statistics(statistics_)
         , input_statistics(input_statistics_)
         , child_props(child_props_)
@@ -38,7 +38,7 @@ public:
         node_count = cluster->getShardCount();
     }
 
-    Cost visit(QueryPlanStepPtr step) override;
+    Cost visit(const QueryPlanStepPtr & step) override;
 
     Cost visitDefault(IQueryPlanStep & step) override;
 
@@ -84,7 +84,7 @@ private:
     /// Required children steps physical properties(distribution)
     /// Note that the props only represent the required, the real
     /// one is not sure if it is ANY.
-    const ChildrenProp & child_props;
+    const ChildProperties & child_props;
 
     /// Query context
     ContextPtr context;

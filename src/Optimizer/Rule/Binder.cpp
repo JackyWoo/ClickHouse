@@ -74,7 +74,7 @@ std::vector<SubQueryPlanPtr> Binder::extractGroupNode(const Pattern & pattern_, 
         if (child_pattern[i].getStepType() == StepType::PatternAny)
         {
             SubQueryPlanPtr sub_plan = std::make_shared<SubQueryPlan>();
-            auto child_step = std::make_shared<GroupStep>(child_group[i]->getOneGroupNode()->getStep()->getOutputStream(), *child_group[i]);
+            auto child_step = std::make_shared<GroupStep>(child_group[i]->getOneGroupNode()->getStep()->getOutputHeader(), *child_group[i]);
             sub_plan->addStep(child_step);
             children_candidate_lists.push_back({sub_plan});
         }

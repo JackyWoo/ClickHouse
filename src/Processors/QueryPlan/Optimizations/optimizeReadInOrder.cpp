@@ -106,27 +106,6 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, bool allow_existing_or
     return nullptr;
 }
 
-void updateStepsDataStreams(StepStack & steps_to_update)
-{
-    /// update data stream's sorting properties for found transforms
-    if (!steps_to_update.empty())
-    {
-        const DataStream * input_stream = &steps_to_update.back()->getOutputStream();
-        steps_to_update.pop_back();
-
-        while (!steps_to_update.empty())
-        {
-            auto * transforming_step = dynamic_cast<ITransformingStep *>(steps_to_update.back());
-            if (!transforming_step)
-                break;
-
-            transforming_step->updateInputStream(*input_stream);
-            input_stream = &steps_to_update.back()->getOutputStream();
-            steps_to_update.pop_back();
-        }
-    }
-}
-
 /// FixedColumns are columns which values become constants after filtering.
 /// In a query "SELECT x, y, z FROM table WHERE x = 1 AND y = 'a' ORDER BY x, y, z"
 /// Fixed columns are 'x' and 'y'.
@@ -1136,13 +1115,41 @@ void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
         return;
 
     /// TODO: maybe add support for UNION later.
-    std::vector<IQueryPlanStep*> steps_to_update;
-    if (auto order_info = buildInputOrderInfo(*aggregating, *node.children.front(), steps_to_update); order_info.input_order)
+    auto order_info = buildInputOrderInfo(*aggregating, *node.children.front());
+    if (order_info.input_order)
     {
-        aggregating->applyOrder(std::move(order_info.sort_description_for_merging), std::move(order_info.group_by_sort_description));
-        /// update data stream's sorting properties
-        updateStepsDataStreams(steps_to_update);
+        std::unordered_set<std::string_view> used_keys;
+        for (const auto & desc : order_info.sort_description)
+            used_keys.insert(desc.column_name);
+
+        /// Append other GROUP BY keys to sort description.
+        SortDescription group_by_sort_description = order_info.sort_description;
+        for (const auto & key : aggregating->getParams().keys)
+            if (used_keys.emplace(key).second)
+                group_by_sort_description.push_back(SortColumnDescription(std::string(key)));
+
+        aggregating->applyOrder(std::move(order_info.sort_description), std::move(group_by_sort_description));
     }
+}
+
+void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
+{
+    if (node.children.size() != 1)
+        return;
+
+    auto * distinct = typeid_cast<DistinctStep *>(node.step.get());
+    if (!distinct)
+        return;
+
+    if (!distinct->isPreliminary())
+        return;
+
+    if (!distinct->getSortDescription().empty())
+        return;
+
+    auto order_info = buildInputOrderInfo(*distinct, *node.children.front());
+    if (order_info.input_order)
+        distinct->applyOrder(std::move(order_info.sort_description));
 }
 
 /// This optimization is obsolete and will be removed.
@@ -1184,8 +1191,9 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
     }
 
     auto context = read_from_merge_tree->getContext();
-    const auto & settings = context->getSettings();
-    if (!settings.optimize_read_in_window_order || (settings.optimize_read_in_order && settings.query_plan_read_in_order) || context->getSettingsRef().allow_experimental_analyzer)
+    const auto & settings = context->getSettingsRef();
+    if (!settings[Setting::optimize_read_in_window_order] || (settings[Setting::optimize_read_in_order] && settings[Setting::query_plan_read_in_order])
+        || context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         return 0;
     }
@@ -1203,13 +1211,13 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
     for (const auto & actions_dag : window_desc.partition_by_actions)
     {
         order_by_elements_actions.emplace_back(
-            std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)));
+            std::make_shared<ExpressionActions>(actions_dag->clone(), ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)));
     }
 
     for (const auto & actions_dag : window_desc.order_by_actions)
     {
         order_by_elements_actions.emplace_back(
-            std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)));
+            std::make_shared<ExpressionActions>(actions_dag->clone(), ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)));
     }
 
     auto order_optimizer = std::make_shared<ReadInOrderOptimizer>(
@@ -1228,7 +1236,7 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
         bool can_read = read_from_merge_tree->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit);
         if (!can_read)
             return 0;
-        sorting->convertToFinishSorting(order_info->sort_description_for_merging);
+        sorting->convertToFinishSorting(order_info->sort_description_for_merging, false);
     }
 
     return 0;

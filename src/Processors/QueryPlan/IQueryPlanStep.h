@@ -97,6 +97,8 @@ public:
     void updateInputHeaders(Headers input_headers_);
     void updateInputHeader(Header input_header, size_t idx = 0);
 
+    virtual StepType stepType() const;
+
 protected:
     virtual void updateOutputHeader() = 0;
 
@@ -113,5 +115,5 @@ protected:
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 };
 
-using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
+using QueryPlanStepPtr = std::shared_ptr<IQueryPlanStep>;
 }

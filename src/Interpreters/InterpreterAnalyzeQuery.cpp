@@ -18,7 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int UNKNOWN_TABLE;
-extern const int UNKNOWN_COLUMN;
+extern const int NO_SUCH_COLUMN_IN_TABLE;
 extern const int UNSUPPORTED_METHOD;
 }
 
@@ -79,7 +79,7 @@ BlockIO InterpreterAnalyzeQuery::executeAnalyzeTable()
             if (auto * column_name = column_expr->as<ASTIdentifier>())
             {
                 if (!table_columns.has(column_name->name()))
-                    throw Exception(ErrorCodes::UNKNOWN_COLUMN, "Column {} does not exist", column_name->name());
+                    throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Column {} does not exist", column_name->name());
                 column_names.push_back(column_name->name());
             }
         }

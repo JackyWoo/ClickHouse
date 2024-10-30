@@ -50,7 +50,7 @@ private:
 class PredicateStatsCalculator
 {
 public:
-    static Stats calculateStatistics(const ActionsDAGPtr & predicates, const String & filter_node_name, const Stats & input);
+    static Stats calculateStatistics(const ActionsDAG & predicates, const String & filter_node_name, const Stats & input);
 };
 
 }

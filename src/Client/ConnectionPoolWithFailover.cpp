@@ -152,8 +152,8 @@ IConnectionPool::Entry ConnectionPoolWithFailover::getOne(const ConnectionTimeou
     std::vector<TryResult> results = getManyImpl(settings, PoolMode::GET_ONE, try_get_entry);
     GetPriorityFunc get_priority = makeGetPriorityFunc(settings);
 
-    size_t max_tries = settings.connections_with_failover_max_tries;
-    UInt64 max_ignored_errors = settings.distributed_replica_max_ignored_errors.value;
+    size_t max_tries = settings[Setting::connections_with_failover_max_tries];
+    UInt64 max_ignored_errors = settings[Setting::distributed_replica_max_ignored_errors];
 
     TryResult result = Base::getOne(max_tries,
                          max_ignored_errors,

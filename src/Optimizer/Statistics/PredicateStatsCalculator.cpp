@@ -33,11 +33,11 @@ ActionNodeStatistics PredicateNodeVisitor::visitOtherFuncs(const ActionsDAG::Nod
     return node_stats;
 }
 
-Stats PredicateStatsCalculator::calculateStatistics(const ActionsDAGPtr & predicates, const String & filter_node_name, const Stats & input)
+Stats PredicateStatsCalculator::calculateStatistics(const ActionsDAG & predicates, const String & filter_node_name, const Stats & input)
 {
     Stats statistics;
 
-    const auto & input_nodes = predicates->getInputs();
+    const auto & input_nodes = predicates.getInputs();
     PredicateNodeVisitor::VisitContext context;
 
     /// 1. init context
@@ -51,11 +51,11 @@ Stats PredicateStatsCalculator::calculateStatistics(const ActionsDAGPtr & predic
 
     /// 2. calculate filter node
     PredicateNodeVisitor visitor;
-    const auto * filter_node = &predicates->findInOutputs(filter_node_name);
+    const auto * filter_node = &predicates.findInOutputs(filter_node_name);
     ActionNodeStatistics filter_node_stats = visitor.visit(filter_node, context);
     statistics.addColumnStatistics(filter_node->result_name, std::make_shared<ColumnStats>(0.0, 1.0, 2.0, 1.0));
 
-    auto & output_nodes = predicates->getOutputs();
+    auto & output_nodes = predicates.getOutputs();
     chassert(output_nodes.size() > 0);
 
     /// 3. calculate other output nodes

@@ -28,6 +28,7 @@ namespace ErrorCodes
 
 namespace ProfileEvents
 {
+    extern const Event DistributedConnectionFailTry;
     extern const Event DistributedConnectionFailAtAll;
     extern const Event DistributedConnectionSkipReadOnlyReplica;
 }

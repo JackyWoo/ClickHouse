@@ -19,14 +19,10 @@ static ITransformingStep::Traits getTraits()
 }
 
 TopNStep::TopNStep(QueryPlanStepPtr sorting_step_, QueryPlanStepPtr limit_step_)
-    : ITransformingStep(sorting_step_->getInputStreams()[0], sorting_step_->getInputStreams()[0].header, getTraits())
+    : ITransformingStep(sorting_step_->getInputHeaders()[0], limit_step_->getOutputHeader(), getTraits())
     , sorting_step(sorting_step_)
     , limit_step(limit_step_)
 {
-    output_stream = limit_step->getOutputStream();
-    output_stream->sort_description = sorting_step->getOutputStream().sort_description;
-    output_stream->sort_scope = sorting_step->getOutputStream().sort_scope;
-
     setStepDescription("One stage TopN");
 }
 
@@ -41,11 +37,9 @@ void TopNStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQue
     limit->transformPipeline(pipeline, {});
 }
 
-void TopNStep::updateOutputStream()
+void TopNStep::updateOutputHeader()
 {
-    output_stream = limit_step->getOutputStream();
-    output_stream->sort_description = sorting_step->getOutputStream().sort_description;
-    output_stream->sort_scope = sorting_step->getOutputStream().sort_scope;
+    output_header = limit_step->getOutputHeader();
 }
 
 
@@ -58,7 +52,7 @@ std::shared_ptr<TopNStep> TopNStep::makePreliminary(bool exact_rows_before_limit
 
     auto pre_sort = sorting->clone();
     auto pre_limit = std::make_shared<LimitStep>(
-        pre_sort->getOutputStream(),
+        pre_sort->getOutputHeader(),
         limit->getLimitForSorting(),
         0,
         exact_rows_before_limit);
@@ -69,7 +63,7 @@ std::shared_ptr<TopNStep> TopNStep::makePreliminary(bool exact_rows_before_limit
     return pre_topn;
 }
 
-std::shared_ptr<TopNStep> TopNStep::makeFinal(const DataStream & input_stream, size_t max_block_size, bool exact_rows_before_limit)
+std::shared_ptr<TopNStep> TopNStep::makeFinal(const Header & input_header, size_t max_block_size, bool exact_rows_before_limit)
 {
     auto * limit = typeid_cast<LimitStep *>(limit_step.get());
     assert(limit != nullptr);
@@ -77,10 +71,10 @@ std::shared_ptr<TopNStep> TopNStep::makeFinal(const DataStream & input_stream, s
     assert(sorting != nullptr);
 
     auto merging_sorted = std::make_shared<SortingStep>(
-        input_stream, sorting->getSortDescription(), max_block_size, sorting->getLimit(), exact_rows_before_limit);
+        input_header, sorting->getSortDescription(), max_block_size, sorting->getLimit(), exact_rows_before_limit);
 
     auto final_limit = std::make_shared<LimitStep>(
-        merging_sorted->getOutputStream(),
+        merging_sorted->getOutputHeader(),
         limit->getLimit(),
         limit->getOffset(),
         exact_rows_before_limit,

@@ -11,26 +11,29 @@ namespace DB
 class TopNStep final : public ITransformingStep
 {
 public:
-    /// Only work on query coordination
     enum Phase
     {
-        Final,
-        Preliminary,
         Unknown,
+        Preliminary,
+        Final,
     };
 
-    TopNStep(
-        QueryPlanStepPtr sorting_step_, QueryPlanStepPtr limit_step_);
+    TopNStep(QueryPlanStepPtr sorting_step_, QueryPlanStepPtr limit_step_);
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     String getName() const override { return "TopN"; }
 
     Phase getPhase() const { return phase; }
-
     void setPhase(Phase phase_) { phase = phase_; }
+
+    bool isPreliminary() const { return phase == Preliminary; }
+    bool hasPartitions() const
+    {
+        auto * sorting_step_casted = typeid_cast<SortingStep *>(sorting_step.get());
+        return sorting_step_casted->hasPartitions();
+    }
 
     size_t getLimitForSorting() const
     {
@@ -43,8 +46,7 @@ public:
     }
 
     std::shared_ptr<TopNStep> makePreliminary(bool exact_rows_before_limit);
-
-    std::shared_ptr<TopNStep> makeFinal(const DataStream & input_stream, size_t max_block_size, bool exact_rows_before_limit);
+    std::shared_ptr<TopNStep> makeFinal(const Header & input_header, size_t max_block_size, bool exact_rows_before_limit);
 
     StepType stepType() const override
     {
@@ -65,7 +67,7 @@ public:
         return sorting->getPrefixDescription();
     }
 
-    const SortDescription & getSortDescription() const
+    const SortDescription & getSortDescription() const override
     {
         auto * sorting = typeid_cast<SortingStep *>(sorting_step.get());
         assert(sorting != nullptr);
@@ -76,7 +78,7 @@ private:
     QueryPlanStepPtr sorting_step;
     QueryPlanStepPtr limit_step;
 
-    Phase phase = Phase::Unknown;
+    Phase phase = Unknown;
 };
 
 }

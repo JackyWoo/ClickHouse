@@ -13,18 +13,15 @@ class Memo;
 class OptimizeTask
 {
 public:
-    OptimizeTask(TaskContextPtr task_context);
-
+    explicit OptimizeTask(TaskContextPtr task_context);
     virtual ~OptimizeTask();
 
     virtual void execute() = 0;
-
     virtual String getDescription() = 0;
 
 protected:
     void pushTask(std::unique_ptr<OptimizeTask> task);
-
-    ContextPtr getQueryContext();
+    ContextPtr getQueryContext() const;
 
     TaskContextPtr task_context;
 };

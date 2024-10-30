@@ -189,6 +189,11 @@ namespace DB
     M(UInt64, parts_killer_pool_size, 128, "Threads for cleanup of shared merge tree outdated threads. Only available in ClickHouse Cloud", 0) \
     M(UInt64, keeper_multiread_batch_size, 10'000, "Maximum size of batch for MultiRead request to [Zoo]Keeper that support batching. If set to 0, batching is disabled. Available only in ClickHouse Cloud.", 0) \
     M(Bool, use_legacy_mongodb_integration, true, "Use the legacy MongoDB integration implementation. Note: it's highly recommended to set this option to false, since legacy implementation will be removed in the future. Please submit any issues you encounter with the new implementation.", 0) \
+    \
+    \
+    M(Bool, enable_background_statistics, true, "Enable background table statistics collecting and refreshing.", 0) \
+    M(UInt64, background_statistics_refresh_period_sec, 6 * 3600, "Background table statistics refreshing period in second.", 0) \
+    M(UInt64, background_statistics_collect_period_sec, 24 * 3600, "Background table statistics collecting period in second.", 0) \
 
 /// If you add a setting which can be updated at runtime, please update 'changeable_settings' map in dumpToSystemServerSettingsColumns below
 
