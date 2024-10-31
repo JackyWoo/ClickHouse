@@ -6,7 +6,7 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1", main_configs=["configs/remote_servers.xml"], with_zookeeper=True, macros={"shard": 1, "replica": 1},)
 node2 = cluster.add_instance("node2", main_configs=["configs/remote_servers.xml"], with_zookeeper=True, macros={"shard": 2, "replica": 1},)
 node3 = cluster.add_instance("node3", main_configs=["configs/remote_servers.xml"], with_zookeeper=True, macros={"shard": 3, "replica": 1},)
-# test_two_shards
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -14,15 +14,15 @@ def started_cluster():
         cluster.start()
 
         node1.query("""
-            CREATE TABLE test_table_local ON CLUSTER test_two_shards
+            CREATE TABLE t1 ON CLUSTER test_cluster
             (part_key UInt64, value UInt64, order UInt64)
             ENGINE = MergeTree ORDER BY value SETTINGS index_granularity=100;
         """)
 
         node1.query("""
-            CREATE TABLE test_table ON CLUSTER test_two_shards
+            CREATE TABLE t1_d ON CLUSTER test_cluster
             (part_key UInt64, value UInt64, order UInt64)
-            ENGINE = Distributed(test_two_shards, default, test_table_local, rand());
+            ENGINE = Distributed(test_cluster, default, t1, rand());
         """)
 
         yield cluster
@@ -40,16 +40,16 @@ def exec_query_compare_result(query_text):
 
 def test_query(started_cluster):
     node1.query("""
-        INSERT INTO test_table
+        INSERT INTO t1_d
         SELECT part_key, value, order
         FROM generateRandom('part_key UInt8, value Int8, order Int8') LIMIT 200
     """)
 
-    node1.query("SYSTEM FLUSH DISTRIBUTED test_table")
+    node1.query("SYSTEM FLUSH DISTRIBUTED t1_d")
 
     exec_query_compare_result("""
         SELECT part_key, value, order, groupArray(value) OVER (PARTITION BY part_key ORDER BY value)
         AS frame_values
-        FROM test_table
+        FROM t1_d
         ORDER BY part_key ASC, value ASC
     """)

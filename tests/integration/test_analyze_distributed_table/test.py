@@ -21,7 +21,7 @@ def started_cluster():
 
         node1.query(
             """
-            CREATE TABLE test_analyze_distributed_table ON CLUSTER test_two_shards (id UInt32) 
+            CREATE TABLE test_analyze_distributed_table ON CLUSTER test_cluster (id UInt32) 
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/test_analyze_distributed_table', '{replica}') 
             ORDER BY id;
             """
@@ -29,8 +29,8 @@ def started_cluster():
 
         node1.query(
             """
-            CREATE TABLE test_analyze_distributed_table_all ON CLUSTER test_two_shards (id UInt32) 
-            ENGINE = Distributed(test_two_shards, default, test_analyze_distributed_table, rand());
+            CREATE TABLE test_analyze_distributed_table_all ON CLUSTER test_cluster (id UInt32) 
+            ENGINE = Distributed(test_cluster, default, test_analyze_distributed_table, rand());
             """
         )
 
@@ -46,13 +46,13 @@ def started_cluster():
 def test_analyze_distributed_table(started_cluster):
     node1.query("ANALYZE TABLE test_analyze_distributed_table_all")
 
-    row_count = node1.query("SELECT sum(row_count) FROM cluster('test_two_shards', 'system', 'statistics_table')")
+    row_count = node1.query("SELECT sum(row_count) FROM cluster('test_cluster', 'system', 'statistics_table')")
     assert row_count == '10\n'
 
     column_result = node1.query(
         """
         SELECT `table`, `column`, uniqMerge(ndv), min(min_value), max(max_value), avg(avg_row_size)
-        FROM cluster('test_two_shards', 'system', 'statistics_column_basic')
+        FROM cluster('test_cluster', 'system', 'statistics_column_basic')
         GROUP BY `table`, `column`
         """
     )

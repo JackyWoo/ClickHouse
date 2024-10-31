@@ -28,8 +28,14 @@ AlternativeChildProperties DeriveRequiredChildProps::visitDefault(IQueryPlanStep
             ErrorCodes::NOT_IMPLEMENTED,
             "Engine {} not implemented with CBO optimizer, please disable it by setting allow_experimental_query_coordination to 0",
             step.getName());
-    ChildProperties required_child_prop;
-    return {required_child_prop};
+
+    ChildProperties required_child_props;
+    for (size_t i = 0; i < group_node->childSize(); ++i)
+    {
+        required_child_props.push_back({.distribution = {.type = Distribution::Singleton}});
+    }
+
+    return {required_child_props};
 }
 
 AlternativeChildProperties DeriveRequiredChildProps::visit(ReadFromMergeTree & /*step*/)

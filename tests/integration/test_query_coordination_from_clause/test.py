@@ -4,13 +4,19 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance("node1", main_configs=["configs/remote_servers.xml"], with_zookeeper=True, macros={"shard": 1, "replica": 1},)
-node2 = cluster.add_instance("node2", main_configs=["configs/remote_servers.xml"], with_zookeeper=True, macros={"shard": 1, "replica": 2},)
-node3 = cluster.add_instance("node3", main_configs=["configs/remote_servers.xml"], with_zookeeper=True, macros={"shard": 2, "replica": 1},)
-node4 = cluster.add_instance("node4", main_configs=["configs/remote_servers.xml"], with_zookeeper=True, macros={"shard": 2, "replica": 2},)
-node5 = cluster.add_instance("node5", main_configs=["configs/remote_servers.xml"], with_zookeeper=True, macros={"shard": 3, "replica": 1},)
-node6 = cluster.add_instance("node6", main_configs=["configs/remote_servers.xml"], with_zookeeper=True, macros={"shard": 3, "replica": 2},)
-# test_two_shards
+node1 = cluster.add_instance("node1", main_configs=["configs/remote_servers.xml"], with_zookeeper=True,
+                             macros={"shard": 1, "replica": 1}, )
+node2 = cluster.add_instance("node2", main_configs=["configs/remote_servers.xml"], with_zookeeper=True,
+                             macros={"shard": 1, "replica": 2}, )
+node3 = cluster.add_instance("node3", main_configs=["configs/remote_servers.xml"], with_zookeeper=True,
+                             macros={"shard": 2, "replica": 1}, )
+node4 = cluster.add_instance("node4", main_configs=["configs/remote_servers.xml"], with_zookeeper=True,
+                             macros={"shard": 2, "replica": 2}, )
+node5 = cluster.add_instance("node5", main_configs=["configs/remote_servers.xml"], with_zookeeper=True,
+                             macros={"shard": 3, "replica": 1}, )
+node6 = cluster.add_instance("node6", main_configs=["configs/remote_servers.xml"], with_zookeeper=True,
+                             macros={"shard": 3, "replica": 2}, )
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -18,11 +24,11 @@ def started_cluster():
         cluster.start()
 
         node1.query(
-            """CREATE TABLE test_from_clause ON CLUSTER test_two_shards (id UInt32, val String, name String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/test_from_clause', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
+            """CREATE TABLE t1 ON CLUSTER test_cluster (id UInt32, val String, name String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/t1', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
         )
 
         node1.query(
-            """CREATE TABLE test_from_clause_all ON CLUSTER test_two_shards (id UInt32, val String, name String) ENGINE = Distributed(test_two_shards, default, test_from_clause, rand());"""
+            """CREATE TABLE t1_d ON CLUSTER test_cluster (id UInt32, val String, name String) ENGINE = Distributed(test_cluster, default, t1, rand());"""
         )
 
         yield cluster
@@ -30,12 +36,14 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+
 def insert_data():
-    node1.query("INSERT INTO test_from_clause SELECT id,'AAA','BBB' FROM generateRandom('id Int16') LIMIT 20")
-    node3.query("INSERT INTO test_from_clause SELECT id,'BBB','CCC' FROM generateRandom('id Int16') LIMIT 30")
-    node5.query("INSERT INTO test_from_clause SELECT id,'AAA','CCC' FROM generateRandom('id Int16') LIMIT 40")
-    node1.query("INSERT INTO test_from_clause_all SELECT id,'AAA','BBB' FROM generateRandom('id Int16') LIMIT 50")
-    node1.query("SYSTEM FLUSH DISTRIBUTED test_from_clause_all")
+    node1.query("INSERT INTO t1 SELECT id,'AAA','BBB' FROM generateRandom('id Int16') LIMIT 20")
+    node3.query("INSERT INTO t1 SELECT id,'BBB','CCC' FROM generateRandom('id Int16') LIMIT 30")
+    node5.query("INSERT INTO t1 SELECT id,'AAA','CCC' FROM generateRandom('id Int16') LIMIT 40")
+    node1.query("INSERT INTO t1_d SELECT id,'AAA','BBB' FROM generateRandom('id Int16') LIMIT 50")
+    node1.query("SYSTEM FLUSH DISTRIBUTED t1_d")
+
 
 def exec_query_compare_result(query_text):
     accurate_result = node1.query(query_text)
@@ -43,9 +51,10 @@ def exec_query_compare_result(query_text):
 
     assert accurate_result == test_result
 
+
 def test_query(started_cluster):
     insert_data()
 
-    exec_query_compare_result("SELECT * FROM test_from_clause_all ORDER BY id,val,name")
+    exec_query_compare_result("SELECT * FROM t1_d ORDER BY id,val,name")
 
-    exec_query_compare_result("SELECT * FROM (SELECT id, name FROM test_from_clause_all WHERE id > 3) WHERE id > 4 ORDER BY id,name")
+    exec_query_compare_result("SELECT * FROM (SELECT id, name FROM t1_d WHERE id > 3) WHERE id > 4 ORDER BY id,name")

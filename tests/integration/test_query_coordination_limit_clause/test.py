@@ -10,7 +10,7 @@ node3 = cluster.add_instance("node3", main_configs=["configs/remote_servers.xml"
 node4 = cluster.add_instance("node4", main_configs=["configs/remote_servers.xml"], with_zookeeper=True, macros={"shard": 2, "replica": 2},)
 node5 = cluster.add_instance("node5", main_configs=["configs/remote_servers.xml"], with_zookeeper=True, macros={"shard": 3, "replica": 1},)
 node6 = cluster.add_instance("node6", main_configs=["configs/remote_servers.xml"], with_zookeeper=True, macros={"shard": 3, "replica": 2},)
-# test_two_shards
+# test_cluster
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -18,16 +18,16 @@ def started_cluster():
         cluster.start()
 
         node1.query("""
-            CREATE TABLE local_table ON CLUSTER test_two_shards
+            CREATE TABLE local_table ON CLUSTER test_cluster
             (id UInt32, val String, name String)
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/local_table', '{replica}')
             ORDER BY id SETTINGS index_granularity = 100;
         """)
 
         node1.query("""
-            CREATE TABLE distributed_table ON CLUSTER test_two_shards
+            CREATE TABLE distributed_table ON CLUSTER test_cluster
             (id UInt32, val String, name String)
-            ENGINE = Distributed(test_two_shards, default, local_table, rand());
+            ENGINE = Distributed(test_cluster, default, local_table, rand());
         """)
 
         yield cluster

@@ -43,6 +43,7 @@ PhysicalProperty DeriveOutputProp::visit(const QueryPlanStepPtr & step)
 PhysicalProperty DeriveOutputProp::visitDefault(IQueryPlanStep & step)
 {
     PhysicalProperty res;
+    res.distribution = child_properties[0].distribution;
 
     if (step.stepType() == StepType::Scan)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Step {} not implemented with CBO optimizer", step.getName());
@@ -82,6 +83,7 @@ PhysicalProperty DeriveOutputProp::visit(UnionStep & step)
     }
 
     PhysicalProperty res;
+    res.distribution = child_properties[0].distribution;// TODO really?
     res.sorting = {.sort_description = std::move(common_sort_description), .sort_scope = sort_scope};
     return res;
 }
@@ -90,7 +92,10 @@ PhysicalProperty DeriveOutputProp::visit(ReadFromMergeTree & step)
 {
     PhysicalProperty res;
     res.sorting.sort_description = step.getSortDescription();
-    res.sorting.sort_scope = Sorting::Scope::Stream;
+    if (res.sorting.sort_description.empty())
+        res.sorting.sort_scope = Sorting::Scope::None;
+    else
+        res.sorting.sort_scope = Sorting::Scope::Stream;
 
     /// Optimize distribution by sharding key
 
@@ -167,6 +172,7 @@ PhysicalProperty DeriveOutputProp::visit(FilterStep & step)
     applyActionsToSortDescription(sort_desc, expr, out_to_skip);
 
     PhysicalProperty res;
+    res.distribution = child_properties[0].distribution;
     res.sorting.sort_description = sort_desc;
     res.sorting.sort_scope = Sorting::Scope::Stream;
 
@@ -237,6 +243,7 @@ PhysicalProperty DeriveOutputProp::visit(ExpressionStep & step)
 PhysicalProperty DeriveOutputProp::visit(AggregatingStep & step)
 {
     PhysicalProperty res;
+    res.distribution = child_properties[0].distribution;
     if (step.inOrder())
         res.sorting = {.sort_description = step.getSortDescription(), .sort_scope = Sorting::Scope::Global};
     return res;
@@ -245,6 +252,7 @@ PhysicalProperty DeriveOutputProp::visit(AggregatingStep & step)
 PhysicalProperty DeriveOutputProp::visit(MergingAggregatedStep & step)
 {
     PhysicalProperty res;
+    res.distribution = child_properties[0].distribution;
     if (step.memoryBoundMergingWillBeUsed())
         res.sorting = {.sort_description = step.getGroupBySortDescription(), .sort_scope = Sorting::Scope::Global};
     return res;
@@ -253,7 +261,7 @@ PhysicalProperty DeriveOutputProp::visit(MergingAggregatedStep & step)
 PhysicalProperty DeriveOutputProp::visit(DistinctStep & step)
 {
     PhysicalProperty res;
-
+    res.distribution = child_properties[0].distribution;
     /// Sorting order of distinct step is properly set in applyOrder.cpp
     if (!step.getSortDescription().empty())
         res.sorting.sort_description = step.getSortDescription();

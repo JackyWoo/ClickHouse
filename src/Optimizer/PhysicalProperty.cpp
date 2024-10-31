@@ -27,11 +27,11 @@ String Sorting::toString() const
         ret += "(" + sort_description[0].column_name;
         for (size_t i = 1; i < std::min(2UL, sort_description.size()); ++i)
         {
-            ret += "/";
+            ret += ",";
             ret += sort_description[i].column_name;
         }
         if (sort_description.size() > 2UL)
-            ret += "/...";
+            ret += " ...";
         ret += ")";
     }
 
@@ -40,17 +40,23 @@ String Sorting::toString() const
 
 String Distribution::toString() const
 {
+    String ret;
     switch (this->type)
     {
         case Any:
-            return "Any";
+            ret = "Any";
+            break;
         case Singleton:
-            return "Singleton";
+            ret = "Singleton";
+            break;
         case Replicated:
-            return "Replicated";
+            ret = "Replicated";
+            break;
         case Hashed:
-            return "Hashed";
+            ret = "Hashed";
+            break;
     }
+    return ret;
 }
 
 bool PhysicalProperty::operator==(const PhysicalProperty & other) const

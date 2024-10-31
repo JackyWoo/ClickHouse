@@ -18,8 +18,6 @@ node6 = cluster.add_instance("node6", main_configs=["configs/remote_servers.xml"
                              macros={"shard": 3, "replica": 2}, )
 
 
-# test_two_shards
-
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -27,16 +25,16 @@ def started_cluster():
 
         node1.query(
             """
-            CREATE TABLE local_table ON CLUSTER test_two_shards (id UInt32, val String, name String)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/local_table', '{replica}')
+            CREATE TABLE t1 ON CLUSTER test_cluster (id UInt32, val String, name String)
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/t1', '{replica}')
             ORDER BY id SETTINGS index_granularity=100;
             """
         )
 
         node1.query(
             """
-            CREATE TABLE distributed_table ON CLUSTER test_two_shards (id UInt32, val String, name String)
-            ENGINE = Distributed(test_two_shards, default, local_table, rand());
+            CREATE TABLE t1_d ON CLUSTER test_cluster (id UInt32, val String, name String)
+            ENGINE = Distributed(test_cluster, default, t1, rand());
             """
         )
 
@@ -45,20 +43,22 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+
 def exec_query_compare_result(query_text):
     accurate_result = node1.query(query_text)
     test_result = node1.query(query_text + " SETTINGS allow_experimental_query_coordination = 1")
     assert accurate_result == test_result
 
-def test_query(started_cluster):
-    node1.query("INSERT INTO distributed_table SELECT id,'123','test' FROM generateRandom('id Int16') LIMIT 1000")
 
-    node1.query("SYSTEM FLUSH DISTRIBUTED distributed_table")
+def test_query(started_cluster):
+    node1.query("INSERT INTO t1_d SELECT id,'123','test' FROM generateRandom('id Int16') LIMIT 1000")
+
+    node1.query("SYSTEM FLUSH DISTRIBUTED t1_d")
 
     exec_query_compare_result("""
-        WITH cte_numbers AS (SELECT id FROM distributed_table WHERE id > 3 LIMIT 1000)
+        WITH cte_numbers AS (SELECT id FROM t1_d WHERE id > 3 LIMIT 1000)
         SELECT count()
-        FROM distributed_table
+        FROM t1_d
         WHERE id IN (SELECT id FROM cte_numbers)
         SETTINGS allow_experimental_query_coordination = 1
         """)

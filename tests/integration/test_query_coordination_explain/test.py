@@ -25,21 +25,21 @@ def started_cluster():
 
         node1.query(
             """
-            CREATE TABLE test_explain ON CLUSTER test_two_shards (type String, click UInt32) 
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/test_explain', '{replica}') 
+            CREATE TABLE t1 ON CLUSTER test_cluster (type String, click UInt32) 
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/t1', '{replica}') 
             ORDER BY type SETTINGS index_granularity=100;
             """
         )
 
         node1.query(
             """
-            CREATE TABLE test_explain_all ON CLUSTER test_two_shards (type String, click UInt32) 
-            ENGINE = Distributed(test_two_shards, default, test_explain, rand());
+            CREATE TABLE t1_d ON CLUSTER test_cluster (type String, click UInt32) 
+            ENGINE = Distributed(test_cluster, default, t1, rand());
             """
         )
 
-        node1.query("INSERT INTO test_explain_all SELECT toString(number % 10), number FROM numbers(600)")
-        node1.query("SYSTEM FLUSH DISTRIBUTED test_explain_all")
+        node1.query("INSERT INTO t1_d SELECT toString(number % 10), number FROM numbers(600)")
+        node1.query("SYSTEM FLUSH DISTRIBUTED t1_d")
 
         yield cluster
 
@@ -53,7 +53,7 @@ def test_explain(started_cluster):
         """
         SELECT count() > 0 
         FROM 
-            (EXPLAIN SELECT * FROM test_explain SETTINGS allow_experimental_query_coordination = 1) 
+            (EXPLAIN SELECT * FROM t1 SETTINGS allow_experimental_query_coordination = 1) 
         WHERE explain LIKE '%ExchangeData%'
         """
     )
@@ -65,7 +65,7 @@ def test_explain(started_cluster):
         """
         SELECT count() > 0 
         FROM 
-            (EXPLAIN SELECT * FROM test_explain_all SETTINGS allow_experimental_query_coordination = 0) 
+            (EXPLAIN SELECT * FROM t1_d SETTINGS allow_experimental_query_coordination = 0) 
         WHERE explain LIKE '%ExchangeData%'
         """
     )
@@ -78,7 +78,7 @@ def test_explain(started_cluster):
         """
         SELECT count() > 0 
         FROM 
-            (EXPLAIN SELECT * FROM test_explain_all WHERE click > 3 SETTINGS allow_experimental_query_coordination = 1) 
+            (EXPLAIN SELECT * FROM t1_d WHERE click > 3 SETTINGS allow_experimental_query_coordination = 1) 
         WHERE explain LIKE '%ExchangeData%'
         """
     )
@@ -89,18 +89,18 @@ def test_explain(started_cluster):
 def test_explain_fragment(started_cluster):
     # Explain plan with query coordination does not support Json format.
     assert node1.query_and_get_error(
-        "EXPLAIN FRAGMENT SELECT * FROM test_explain_all SETTINGS allow_experimental_query_coordination = 0")
+        "EXPLAIN FRAGMENT SELECT * FROM t1_d SETTINGS allow_experimental_query_coordination = 0")
 
     # Queries with local table will not go with query_coordination(new queryPlan).
     assert node1.query_and_get_error(
-        "EXPLAIN FRAGMENT SELECT * FROM test_explain SETTINGS allow_experimental_query_coordination = 1")
+        "EXPLAIN FRAGMENT SELECT * FROM t1 SETTINGS allow_experimental_query_coordination = 1")
 
     # Queries without query coordination will go with old QueryPlan
     assert node1.query_and_get_error(
         """
         SELECT count() > 0 
         FROM 
-            (EXPLAIN FRAGMENT SELECT * FROM test_explain_all WHERE click > 3 SETTINGS allow_experimental_query_coordination = 0) 
+            (EXPLAIN FRAGMENT SELECT * FROM t1_d WHERE click > 3 SETTINGS allow_experimental_query_coordination = 0) 
         WHERE explain LIKE '%Fragment%'
         """
     )
@@ -110,7 +110,7 @@ def test_explain_fragment(started_cluster):
         """
         SELECT count() > 0 
         FROM 
-            (EXPLAIN FRAGMENT SELECT * FROM test_explain_all WHERE click > 3 SETTINGS allow_experimental_query_coordination = 1) 
+            (EXPLAIN FRAGMENT SELECT * FROM t1_d WHERE click > 3 SETTINGS allow_experimental_query_coordination = 1) 
         WHERE explain LIKE '%Fragment%'
         """
     )
