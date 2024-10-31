@@ -168,13 +168,16 @@ PhysicalProperty DeriveOutputProp::visit(FilterStep & step)
                 expr.dumpDAG());
     }
 
-    SortDescription sort_desc;
-    applyActionsToSortDescription(sort_desc, expr, out_to_skip);
+
 
     PhysicalProperty res;
+    res.sorting = child_properties[0].sorting;
+    applyActionsToSortDescription(res.sorting.sort_description, step.getExpression(), out_to_skip);
+
+    if (res.sorting.sort_description.empty())
+        res.sorting.sort_scope = Sorting::Scope::None;
+
     res.distribution = child_properties[0].distribution;
-    res.sorting.sort_description = sort_desc;
-    res.sorting.sort_scope = Sorting::Scope::Stream;
 
     return res;
 }
@@ -213,6 +216,9 @@ PhysicalProperty DeriveOutputProp::visit(ExpressionStep & step)
     /// Try to reserve sorting property
     res.sorting = child_properties[0].sorting;
     applyActionsToSortDescription(res.sorting.sort_description, step.getExpression());
+
+    if (res.sorting.sort_description.empty())
+        res.sorting.sort_scope = Sorting::Scope::None;
 
     if (child_properties[0].distribution.type == Distribution::Hashed)
     {
