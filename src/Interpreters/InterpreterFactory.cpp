@@ -358,6 +358,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterDeleteQuery";
     }
+    else if (query->as<ASTAnalyzeQuery>())
+    {
+        interpreter_name = "InterpreterAnalyzeQuery";
+    }
 
     if (!interpreters.contains(interpreter_name))
         throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Unknown type of query: {}", query->getID());

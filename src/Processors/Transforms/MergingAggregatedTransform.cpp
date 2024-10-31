@@ -19,7 +19,7 @@ Block MergingAggregatedTransform::appendGroupingIfNeeded(const Block & in_header
     /// It behaves like a GROUP BY key, but we cannot append it to keys
     /// because it changes hashing method and buckets for two level aggregation.
     /// Now, this column is processed "manually" by merging each group separately.
-    if (in_header.has("__grouping_set"))
+    if (in_header.has("__grouping_set") && !out_header.has("__grouping_set"))
         out_header.insert(0, in_header.getByName("__grouping_set"));
 
     return out_header;
@@ -81,7 +81,7 @@ MergingAggregatedTransform::MergingAggregatedTransform(
 
         auto in_header = header_;
         in_header.erase(header_.getPositionByName("__grouping_set"));
-        auto out_header = params.getHeader(header_, final);
+        auto out_header = params.getHeader(in_header, final);
 
         grouping_sets.reserve(grouping_sets_params.size());
         for (const auto & grouping_set_params : grouping_sets_params)
