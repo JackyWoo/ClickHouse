@@ -32,6 +32,7 @@ namespace Setting
     extern const SettingsBool optimize_sorting_by_input_stream_properties;
     extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
     extern const SettingsBool query_plan_split_filter;
+    extern const SettingsBool allow_experimental_query_coordination;
 }
 
 QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const Settings & from)
@@ -77,7 +78,7 @@ QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const 
 
     settings.remove_redundant_distinct = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_remove_redundant_distinct];
 
-    settings.optimize_projection = from[Setting::optimize_use_projections];
+    settings.optimize_projection = from[Setting::optimize_use_projections] && !from[Setting::allow_experimental_query_coordination];
     settings.force_use_projection = settings.optimize_projection && from[Setting::force_optimize_projection];
     settings.force_projection_name = settings.optimize_projection ? from[Setting::force_optimize_projection_name].value : "";
     settings.optimize_use_implicit_projections = settings.optimize_projection && from[Setting::optimize_use_implicit_projections];

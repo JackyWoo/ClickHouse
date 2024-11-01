@@ -16,20 +16,17 @@ class TaskContext
 {
 public:
     TaskContext(Group & group_, const PhysicalProperty & required_property_, OptimizeContextPtr optimize_context_);
-    TaskContext(Group & group_, const PhysicalProperty & required_property_, OptimizeContextPtr optimize_context_, Cost upper_bound_cost_);
+    TaskContext(Group & group_, const PhysicalProperty & required_property_, OptimizeContextPtr optimize_context_, const Cost & upper_bound_cost_);
 
-    Group & getCurrentGroup();
-
+    Group & getCurrentGroup() const;
     const PhysicalProperty & getRequiredProp() const;
 
-    OptimizeContextPtr getOptimizeContext();
-
+    OptimizeContextPtr getOptimizeContext() const;
     ContextPtr getQueryContext() const;
 
     Memo & getMemo();
 
     Cost getUpperBoundCost() const;
-
     void setUpperBoundCost(const Cost & upper_bound_cost_);
 
     void pushTask(OptimizeTaskPtr task);

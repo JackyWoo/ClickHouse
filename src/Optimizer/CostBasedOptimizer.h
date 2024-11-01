@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Optimizer/SubQueryPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
 namespace DB

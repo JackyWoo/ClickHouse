@@ -11,12 +11,12 @@ TaskContext::TaskContext(Group & group_, const PhysicalProperty & required_prope
     upper_bound_cost = Cost::infinite(CostSettings::fromContext(optimize_context_->getQueryContext()).getCostWeight());
 }
 
-TaskContext::TaskContext( Group & group_, const PhysicalProperty & required_property_, OptimizeContextPtr optimize_context_, Cost upper_bound_cost_)
+TaskContext::TaskContext( Group & group_, const PhysicalProperty & required_property_, OptimizeContextPtr optimize_context_, const Cost & upper_bound_cost_)
     : group(group_), required_property(required_property_), upper_bound_cost(upper_bound_cost_), optimize_context(optimize_context_)
 {
 }
 
-Group & TaskContext::getCurrentGroup()
+Group & TaskContext::getCurrentGroup() const
 {
     return group;
 }
@@ -26,7 +26,7 @@ const PhysicalProperty & TaskContext::getRequiredProp() const
     return required_property;
 }
 
-OptimizeContextPtr TaskContext::getOptimizeContext()
+OptimizeContextPtr TaskContext::getOptimizeContext() const
 {
     return optimize_context;
 }
