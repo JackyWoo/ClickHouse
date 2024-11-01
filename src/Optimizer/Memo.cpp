@@ -100,7 +100,7 @@ QueryPlan Memo::extractPlan()
     SubQueryPlan::ExplainPlanOptions settings;
     plan.explainPlan(buffer, settings);
 
-    LOG_TRACE(log, "Found best plan: {}", buffer.str());
+    LOG_TRACE(log, "Found best plan:\n {}", buffer.str());
     return plan;
 }
 

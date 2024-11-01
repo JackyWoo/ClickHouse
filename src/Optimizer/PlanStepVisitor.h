@@ -52,6 +52,8 @@ public:
             return visit(*agg_step);
         else if (auto * merge_agg_step = typeid_cast<MergingAggregatedStep *>(step.get()))
             return visit(*merge_agg_step);
+        else if (auto * agg_projection_step = typeid_cast<AggregatingProjectionStep *>(step.get()))
+            return visit(*agg_projection_step);
         else if (auto * sort_step = typeid_cast<SortingStep *>(step.get()))
             return visit(*sort_step);
         else if (auto * topn_step = typeid_cast<TopNStep *>(step.get()))
@@ -94,6 +96,8 @@ public:
     virtual R visit(AggregatingStep & step) { return visitDefault(step); }
 
     virtual R visit(MergingAggregatedStep & step) { return visitDefault(step); }
+
+    virtual R visit(AggregatingProjectionStep & step) { return visitDefault(step); }
 
     virtual R visit(ExpressionStep & step) { return visitDefault(step); }
 

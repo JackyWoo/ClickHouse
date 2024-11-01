@@ -275,6 +275,8 @@ AlternativeChildProperties DeriveRequiredChildProps::visit(CreatingSetsStep & st
 AlternativeChildProperties DeriveRequiredChildProps::visit(UnionStep & /*step*/)
 {
     ChildProperties required_child_prop;
+    required_child_prop.push_back({.distribution = {.type = Distribution::Any}});
+    required_child_prop.push_back({.distribution = {.type = Distribution::Any}});
     return {required_child_prop};
 }
 
