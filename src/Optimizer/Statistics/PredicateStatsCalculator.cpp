@@ -366,7 +366,14 @@ ActionNodeStatistics PredicateNodeVisitor::calculateBinaryPredicateFunction(
     {
         /// get unique variable input node stats
         auto input_nodes = getInputNodes(var_node);
-        chassert(input_nodes.size() == 1);
+
+        /// E.g. a + b > 1
+        if (input_nodes.size() != 1)
+        {
+            node_stats.selectivity = 0.1; /// TODO add to settings
+            /// Here we did not change the statistics of a and b
+            return;
+        }
         auto uniq_input_node_stats = var_stats.get(input_nodes[0]);
         chassert(uniq_input_node_stats);
 

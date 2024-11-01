@@ -8,7 +8,7 @@ namespace DB
 
 using InputNodeStatsMap = std::unordered_map<const ActionsDAG::Node *, ColumnStatsPtr>;
 
-/** Represent input node statistics after a action node applied.
+/** Represent input node statistics after an action node applied.
  *  Note that ActionNodeStatistics only concerns about the nodes
  *  which are in the node tree.
  *
