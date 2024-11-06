@@ -38,7 +38,7 @@ def exec_query_compare_result(query_text):
     assert accurate_result == test_result
 
 
-def test_query(started_cluster):
+def test_simple(started_cluster):
     node1.query("""
         INSERT INTO t1_d
         SELECT part_key, value, order

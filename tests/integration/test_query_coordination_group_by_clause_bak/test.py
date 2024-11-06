@@ -46,7 +46,7 @@ def exec_query_compare_result(query_text):
     assert accurate_result == test_result
 
 
-def test_simple_group_by(started_cluster):
+def test_simple(started_cluster):
     exec_query_compare_result("SELECT id, val, name FROM t1_d GROUP BY id, val, name ORDER BY id, val, name")
 
     exec_query_compare_result("SELECT sum(id), val, name FROM t1_d GROUP BY val, name ORDER BY val, name")
@@ -62,14 +62,14 @@ def test_grouping_set(started_cluster):
     exec_query_compare_result("SELECT sum(id), val, name FROM t1_d GROUP BY GROUPING SETS((name,val),(name),(val),()) ORDER BY val, name")
 
 
-def test_group_with_total(started_cluster):
+def test_with_total(started_cluster):
     exec_query_compare_result("SELECT sum(id), val, name FROM t1_d GROUP BY val, name WITH totals ORDER BY val, name")
 
 
-def test_rollup(started_cluster):
+def test_with_rollup(started_cluster):
     exec_query_compare_result("SELECT sum(id), val, name FROM t1_d GROUP BY val, name WITH rollup  ORDER BY val, name")
 
 
-def test_cube(started_cluster):
+def test_with_cube(started_cluster):
     exec_query_compare_result("SELECT sum(id), val, name FROM t1_d GROUP BY val, name WITH cube  ORDER BY val, name")
 

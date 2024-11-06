@@ -32,7 +32,7 @@ def started_cluster():
             )
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/t1/{shard}', '{replica}')
             ORDER BY a
-            SETTINGS index_granularity = 100;
+            SETTINGS index_granularity = 1;
             """
         )
 
@@ -48,7 +48,7 @@ def started_cluster():
         )
 
         node1.query(
-            "INSERT INTO t1_d SELECT toString(n % 10), n % 100, n % 1000 FROM (SELECT number as n FROM system.numbers limit 10000)")
+            "INSERT INTO t1_d SELECT n % 50, n % 50, n % 50 FROM (SELECT number as n FROM system.numbers limit 100)")
 
         node1.query("SYSTEM FLUSH DISTRIBUTED t1_d")
         node1.query("analyze table t1_d")
@@ -71,5 +71,6 @@ def execute_and_compare(query_text, additional_settings=""):
 
 
 def test_simple(started_cluster):
-    execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 100")
-    execute_and_compare("SELECT * FROM (SELECT a, b FROM t1_d WHERE a='1') WHERE b < 100 ORDER BY a, b LIMIT 100")
+    execute_and_compare("SELECT a, sum(b) FROM t1_d GROUP BY a HAVING sum(b) > 10 ORDER BY a")
+    execute_and_compare("SELECT a, sum(b) as sum_b FROM t1_d GROUP BY a HAVING sum_b > 10 ORDER BY a")
+    execute_and_compare("SELECT a, sum(b) as sum_b FROM t1_d GROUP BY a HAVING sum_b - 100 > 10 ORDER BY a")
