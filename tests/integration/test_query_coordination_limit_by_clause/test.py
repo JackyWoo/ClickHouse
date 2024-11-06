@@ -25,12 +25,35 @@ def started_cluster():
         cluster.start()
 
         node1.query(
-            """CREATE TABLE t1 ON CLUSTER test_cluster (id UInt32, val UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/t1', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
+            """
+            CREATE TABLE t1 ON CLUSTER test_cluster (
+                a String,
+                b UInt64,
+                c UInt64
+            )
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/t1/{shard}', '{replica}')
+            ORDER BY a
+            SETTINGS index_granularity = 1;
+            """
         )
 
         node1.query(
-            """CREATE TABLE t1_d ON CLUSTER test_cluster (id UInt32, val UInt32) ENGINE = Distributed(test_cluster, default, t1, rand());"""
+            """
+            CREATE TABLE t1_d ON CLUSTER test_cluster (
+                a String,
+                b UInt64,
+                c UInt64
+            )
+            ENGINE = Distributed(test_cluster, default, t1, rand());
+            """
         )
+
+
+        node1.query(
+            "INSERT INTO t1_d SELECT n % 2, n, n FROM (SELECT number as n FROM system.numbers limit 10)")
+
+        node1.query("SYSTEM FLUSH DISTRIBUTED t1_d")
+        node1.query("analyze table t1_d")
 
         yield cluster
 
@@ -38,35 +61,28 @@ def started_cluster():
         cluster.shutdown()
 
 
-def exec_query_compare_result(query_text):
-    accurate_result = node1.query(query_text)
-    test_result = node1.query(query_text + " SETTINGS allow_experimental_query_coordination = 1")
+def execute_and_compare(query_text, additional_settings=""):
+    settings = " SETTINGS allow_experimental_query_coordination = 0"
+    coordination_settings = " SETTINGS allow_experimental_query_coordination = 1"
+    if len(additional_settings) != 0:
+        settings = settings + ", " + additional_settings
+        coordination_settings = coordination_settings + ", " + additional_settings
+    result = node1.query(query_text + settings)
+    coordination_result = node1.query(query_text + coordination_settings)
+    assert result == coordination_result
 
-    print(accurate_result)
-    print(test_result)
 
-    assert accurate_result == test_result
+def test_simple(started_cluster):
+    execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 1 BY a")
+    execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 6 BY a")
 
 
-def test_query(started_cluster):
-    node1.query("INSERT INTO t1_d SELECT id, val FROM generateRandom('id UInt8, val Int8') LIMIT 20")
-
-    node1.query("SYSTEM FLUSH DISTRIBUTED t1_d")
-
-    exec_query_compare_result("SELECT * FROM t1_d ORDER BY id, val LIMIT 2 BY id")
-
-    # exec_query_compare_result("SELECT * FROM t1_d ORDER BY id, val LIMIT 1, 2 BY id")
-
-    # exec_query_compare_result("SELECT * FROM t1_d ORDER BY id, val LIMIT 2 OFFSET 1 BY id")
-
-    exec_query_compare_result("SELECT * FROM t1_d ORDER BY id, val LIMIT 100 BY id")
-
-    # exec_query_compare_result("SELECT * FROM t1_d ORDER BY id, val LIMIT 1, 100 BY id")
-
-    # exec_query_compare_result("SELECT * FROM t1_d ORDER BY id, val LIMIT 100 OFFSET 1 BY id")
-
-    exec_query_compare_result("SELECT * FROM t1_d ORDER BY id, val LIMIT 200 BY id")
-
-    # exec_query_compare_result("SELECT * FROM t1_d ORDER BY id, val LIMIT 1, 200 BY id")
-
-    # exec_query_compare_result("SELECT * FROM t1_d ORDER BY id, val LIMIT 200 OFFSET 1 BY id")
+# The result of original ck is wrong
+# def test_with_offset(started_cluster):
+#     execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 1, 2 BY a")
+#     execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 1, 6 BY a")
+#     execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 6, 1 BY a")
+#
+#     execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 2 OFFSET 1 BY a")
+#     execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 6 OFFSET 1 BY a")
+#     execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 1 OFFSET 6 BY a")

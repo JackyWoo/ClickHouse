@@ -4,56 +4,90 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance("node1", main_configs=["configs/remote_servers.xml"], with_zookeeper=True, macros={"shard": 1, "replica": 1},)
-node2 = cluster.add_instance("node2", main_configs=["configs/remote_servers.xml"], with_zookeeper=True, macros={"shard": 1, "replica": 2},)
-node3 = cluster.add_instance("node3", main_configs=["configs/remote_servers.xml"], with_zookeeper=True, macros={"shard": 2, "replica": 1},)
-node4 = cluster.add_instance("node4", main_configs=["configs/remote_servers.xml"], with_zookeeper=True, macros={"shard": 2, "replica": 2},)
-node5 = cluster.add_instance("node5", main_configs=["configs/remote_servers.xml"], with_zookeeper=True, macros={"shard": 3, "replica": 1},)
-node6 = cluster.add_instance("node6", main_configs=["configs/remote_servers.xml"], with_zookeeper=True, macros={"shard": 3, "replica": 2},)
-# test_cluster
+node1 = cluster.add_instance("node1", main_configs=["configs/remote_servers.xml"], with_zookeeper=True,
+                             macros={"shard": 1, "replica": 1}, )
+node2 = cluster.add_instance("node2", main_configs=["configs/remote_servers.xml"], with_zookeeper=True,
+                             macros={"shard": 1, "replica": 2}, )
+node3 = cluster.add_instance("node3", main_configs=["configs/remote_servers.xml"], with_zookeeper=True,
+                             macros={"shard": 2, "replica": 1}, )
+node4 = cluster.add_instance("node4", main_configs=["configs/remote_servers.xml"], with_zookeeper=True,
+                             macros={"shard": 2, "replica": 2}, )
+node5 = cluster.add_instance("node5", main_configs=["configs/remote_servers.xml"], with_zookeeper=True,
+                             macros={"shard": 3, "replica": 1}, )
+node6 = cluster.add_instance("node6", main_configs=["configs/remote_servers.xml"], with_zookeeper=True,
+                             macros={"shard": 3, "replica": 2}, )
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
 
-        node1.query("""
-            CREATE TABLE local_table ON CLUSTER test_cluster
-            (id UInt32, val String, name String)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/local_table', '{replica}')
-            ORDER BY id SETTINGS index_granularity = 100;
-        """)
+        node1.query(
+            """
+            CREATE TABLE t1 ON CLUSTER test_cluster (
+                a String,
+                b UInt64,
+                c UInt64
+            )
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/t1/{shard}', '{replica}')
+            ORDER BY a
+            SETTINGS index_granularity = 1;
+            """
+        )
 
-        node1.query("""
-            CREATE TABLE distributed_table ON CLUSTER test_cluster
-            (id UInt32, val String, name String)
-            ENGINE = Distributed(test_cluster, default, local_table, rand());
-        """)
+        node1.query(
+            """
+            CREATE TABLE t1_d ON CLUSTER test_cluster (
+                a String,
+                b UInt64,
+                c UInt64
+            )
+            ENGINE = Distributed(test_cluster, default, t1, rand());
+            """
+        )
+
+        node1.query(
+            "INSERT INTO t1_d SELECT n % 5, n % 5, n % 5 FROM (SELECT number as n FROM system.numbers limit 10)")
+
+        node1.query("SYSTEM FLUSH DISTRIBUTED t1_d")
+        node1.query("analyze table t1_d")
 
         yield cluster
 
     finally:
         cluster.shutdown()
 
-def exec_query_compare_result(query_text):
-    accurate_result = node1.query(query_text)
-    test_result = node1.query(query_text + " SETTINGS allow_experimental_query_coordination = 1")
 
-    assert accurate_result == test_result
+def execute_and_compare(query_text, additional_settings=""):
+    settings = " SETTINGS allow_experimental_query_coordination = 0"
+    coordination_settings = " SETTINGS allow_experimental_query_coordination = 1"
+    if len(additional_settings) != 0:
+        settings = settings + ", " + additional_settings
+        coordination_settings = coordination_settings + ", " + additional_settings
+    result = node1.query(query_text + settings)
+    coordination_result = node1.query(query_text + coordination_settings)
+    assert result == coordination_result
 
-def test_query(started_cluster):
-    node1.query("INSERT INTO distributed_table SELECT number%50, '123', 'test' FROM numbers(200)")
 
-    node1.query("SYSTEM FLUSH DISTRIBUTED distributed_table")
+def test_simple(started_cluster):
+    execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 0")
+    execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 1")
+    execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 10")
+    execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 20")
 
-    exec_query_compare_result("SELECT * FROM distributed_table LIMIT 5")
+    execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 0, 5")
+    execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 1, 5")
+    execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 1, 10")
+    execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 1, 20")
+    execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 10, 10")
+    execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 10, 20")
 
-    exec_query_compare_result("SELECT * FROM distributed_table ORDER BY id LIMIT 5")
 
-    exec_query_compare_result("SELECT * FROM distributed_table ORDER BY id LIMIT 0,5")
-
-    exec_query_compare_result("SELECT * FROM distributed_table ORDER BY id LIMIT 0,5 WITH TIES")
-
-    exec_query_compare_result("SELECT * FROM distributed_table ORDER BY id LIMIT 1,5")
-
-    # exec_query_compare_result("SELECT * FROM distributed_table ORDER BY id LIMIT 1,5 WITH TIES")
+def test_with_ties(started_cluster):
+    execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 2 WITH TIES")
+    execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 1 WITH TIES")
+    # The result of original ck is wrong
+    # execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 1,2 WITH TIES")
+    # execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 1,20 WITH TIES")
+    execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 10,2 WITH TIES")

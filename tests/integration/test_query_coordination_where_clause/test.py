@@ -24,20 +24,63 @@ def started_cluster():
         cluster.start()
 
         node1.query(
-            """CREATE TABLE t1 ON CLUSTER test_cluster (id UInt32, val String, name String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/t1', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
+            """
+            CREATE TABLE t1 ON CLUSTER test_cluster (
+                a String,
+                b UInt64,
+                c UInt64
+            )
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/t1/{shard}', '{replica}')
+            ORDER BY a
+            SETTINGS index_granularity = 100;
+            """
         )
 
         node1.query(
-            """CREATE TABLE t1_d ON CLUSTER test_cluster (id UInt32, val String, name String) ENGINE = Distributed(test_cluster, default, t1, rand());"""
+            """
+            CREATE TABLE t1_d ON CLUSTER test_cluster (
+                a String,
+                b UInt64,
+                c UInt64
+            )
+            ENGINE = Distributed(test_cluster, default, t1, rand());
+            """
         )
 
         node1.query(
-            """CREATE TABLE t2 ON CLUSTER test_cluster (id UInt32, text String, scores UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/t2', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
+            """
+            CREATE TABLE t2 ON CLUSTER test_cluster (
+                a String,
+                b UInt64,
+                c UInt64
+            ) 
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/t2/{shard}', '{replica}') 
+            ORDER BY a 
+            SETTINGS index_granularity = 100;
+            """
         )
 
         node1.query(
-            """CREATE TABLE t2_d ON CLUSTER test_cluster (id UInt32, text String, scores UInt32) ENGINE = Distributed(test_cluster, default, t2, rand());"""
+            """
+            CREATE TABLE t2_d ON CLUSTER test_cluster (
+                a String,
+                b UInt64,
+                c UInt64
+            )
+            ENGINE = Distributed(test_cluster, default, t2, rand());
+            """
         )
+
+        node1.query(
+            "INSERT INTO t1_d SELECT toString(n % 10), n % 100, n % 1000 FROM (SELECT number as n FROM system.numbers limit 10000)")
+        node1.query(
+            "INSERT INTO t2_d SELECT toString(n % 5), n % 50, n % 500 FROM (SELECT number as n FROM system.numbers limit 1000)")
+
+        node1.query("SYSTEM FLUSH DISTRIBUTED t1_d")
+        node1.query("SYSTEM FLUSH DISTRIBUTED t2_d")
+
+        node1.query("analyze table t1_d")
+        node1.query("analyze table t2_d")
 
         yield cluster
 
@@ -45,35 +88,53 @@ def started_cluster():
         cluster.shutdown()
 
 
-def exec_query_compare_result(query_text):
-    accurate_result = node1.query(query_text + " SETTINGS distributed_product_mode = 'global'")
-    test_result = node1.query(
-        query_text + " SETTINGS allow_experimental_query_coordination = 1, use_index_for_in_with_subqueries = 0")
-    assert accurate_result == test_result
+def execute_and_compare(query_text, additional_settings=""):
+    settings = " SETTINGS allow_experimental_query_coordination = 0"
+    coordination_settings = " SETTINGS allow_experimental_query_coordination = 1"
+    if len(additional_settings) != 0:
+        settings = settings + ", " + additional_settings
+        coordination_settings = coordination_settings + ", " + additional_settings
+    result = node1.query(query_text + settings)
+    coordination_result = node1.query(query_text + coordination_settings)
+    assert result == coordination_result
 
 
-def test_query(started_cluster):
-    node1.query("INSERT INTO t1_d SELECT id,'123','test' FROM generateRandom('id Int16') LIMIT 600")
-    node1.query("INSERT INTO t1_d SELECT id,'234','test1' FROM generateRandom('id Int16') LIMIT 500")
+def test_simple(started_cluster):
+    execute_and_compare("SELECT count() FROM t1_d WHERE a='1' and b=10")
+    execute_and_compare("SELECT count() FROM t1_d WHERE a='1' or b=10")
 
-    node1.query("INSERT INTO t2_d SELECT id,'123',10 FROM generateRandom('id Int16') LIMIT 500")
-    node1.query("INSERT INTO t2_d SELECT id,'234',12 FROM generateRandom('id Int16') LIMIT 600")
+    execute_and_compare("SELECT count() FROM t1_d WHERE a like '%a%'")
+    execute_and_compare("SELECT count() FROM t1_d WHERE a not like '%a%'")
 
-    node1.query("SYSTEM FLUSH DISTRIBUTED t1_d")
-    node1.query("SYSTEM FLUSH DISTRIBUTED t2_d")
+    execute_and_compare(
+        "SELECT count() FROM t1_d WHERE a='1' and a!='10' and a not like '%100%' and b > 1000 and c < 2000")
 
-    exec_query_compare_result("SELECT count() FROM t1_d WHERE (val = '123') AND (name = 'test')")
+    execute_and_compare("SELECT count() FROM t1_d WHERE a='1' and b=10 and c in (1, 2, 3)")
+    execute_and_compare("SELECT count() FROM t1_d WHERE a='1' and b=10 or c in (1, 2, 3)")
 
-    exec_query_compare_result("SELECT count() FROM t1_d WHERE (val = '123') OR (name = 'test')")
 
-    exec_query_compare_result(
-        "SELECT count() FROM t1_d WHERE (val = '123') AND (name = 'test') AND id IN (SELECT id FROM t2_d)")
+def test_with_function(started_cluster):
+    execute_and_compare("SELECT count() FROM t1_d WHERE toString(a)='1'")
+    execute_and_compare("SELECT count() FROM t1_d WHERE toUInt64(a)=1")
 
-    exec_query_compare_result(
-        "SELECT count() FROM t1_d WHERE (val = '123') AND (name = 'test') OR id IN (SELECT id FROM t2_d)")
+    execute_and_compare("SELECT count() FROM t1_d WHERE toDateTime(b) < now()")
+    execute_and_compare("SELECT count() FROM t1_d WHERE b + 10 > 100")
 
-    exec_query_compare_result(
-        "SELECT count() FROM t1_d WHERE (val = '123') AND (name = 'test') AND id IN (SELECT id FROM t2_d WHERE id IN (SELECT id FROM t1_d))")
 
-    exec_query_compare_result(
-        "SELECT count() FROM t1_d WHERE (val = '123') AND (name = 'test') OR id IN (SELECT id FROM t2_d WHERE id IN (SELECT id FROM t1_d))")
+def test_multiple_columns_function(started_cluster):
+    execute_and_compare("SELECT count() FROM t1_d WHERE b + c > 100")
+    execute_and_compare("SELECT count() FROM t1_d WHERE c - b > 100")
+
+
+# def test_in_with_subquery(started_cluster):
+# execute_and_compare(
+#     "SELECT count() FROM t1_d WHERE a='1' and b=10 and c in (select c from t2_d where b < 1000)",
+#     additional_settings="distributed_product_mode='allow'")
+#
+# execute_and_compare(
+#     "SELECT count() FROM t1_d WHERE a='1' and b=10 and c in (select c from t2_d where b < 1000)",
+#     additional_settings="distributed_product_mode='allow'")
+#
+# execute_and_compare(
+#     "SELECT count() FROM t1_d WHERE a='1' and b=10 and c in (select c from t2_d where b in (select b from t1_d where c > 100))",
+#     additional_settings="distributed_product_mode='allow'")

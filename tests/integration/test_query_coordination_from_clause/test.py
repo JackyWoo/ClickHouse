@@ -24,12 +24,34 @@ def started_cluster():
         cluster.start()
 
         node1.query(
-            """CREATE TABLE t1 ON CLUSTER test_cluster (id UInt32, val String, name String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/t1', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
+            """
+            CREATE TABLE t1 ON CLUSTER test_cluster (
+                a String,
+                b UInt64,
+                c UInt64
+            )
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/t1/{shard}', '{replica}')
+            ORDER BY a
+            SETTINGS index_granularity = 100;
+            """
         )
 
         node1.query(
-            """CREATE TABLE t1_d ON CLUSTER test_cluster (id UInt32, val String, name String) ENGINE = Distributed(test_cluster, default, t1, rand());"""
+            """
+            CREATE TABLE t1_d ON CLUSTER test_cluster (
+                a String,
+                b UInt64,
+                c UInt64
+            )
+            ENGINE = Distributed(test_cluster, default, t1, rand());
+            """
         )
+
+        node1.query(
+            "INSERT INTO t1_d SELECT toString(n % 10), n % 100, n % 1000 FROM (SELECT number as n FROM system.numbers limit 10000)")
+
+        node1.query("SYSTEM FLUSH DISTRIBUTED t1_d")
+        node1.query("analyze table t1_d")
 
         yield cluster
 
@@ -37,24 +59,17 @@ def started_cluster():
         cluster.shutdown()
 
 
-def insert_data():
-    node1.query("INSERT INTO t1 SELECT id,'AAA','BBB' FROM generateRandom('id Int16') LIMIT 20")
-    node3.query("INSERT INTO t1 SELECT id,'BBB','CCC' FROM generateRandom('id Int16') LIMIT 30")
-    node5.query("INSERT INTO t1 SELECT id,'AAA','CCC' FROM generateRandom('id Int16') LIMIT 40")
-    node1.query("INSERT INTO t1_d SELECT id,'AAA','BBB' FROM generateRandom('id Int16') LIMIT 50")
-    node1.query("SYSTEM FLUSH DISTRIBUTED t1_d")
+def execute_and_compare(query_text, additional_settings=""):
+    settings = " SETTINGS allow_experimental_query_coordination = 0"
+    coordination_settings = " SETTINGS allow_experimental_query_coordination = 1"
+    if len(additional_settings) != 0:
+        settings = settings + ", " + additional_settings
+        coordination_settings = coordination_settings + ", " + additional_settings
+    result = node1.query(query_text + settings)
+    coordination_result = node1.query(query_text + coordination_settings)
+    assert result == coordination_result
 
 
-def exec_query_compare_result(query_text):
-    accurate_result = node1.query(query_text)
-    test_result = node1.query(query_text + " SETTINGS allow_experimental_query_coordination = 1")
-
-    assert accurate_result == test_result
-
-
-def test_query(started_cluster):
-    insert_data()
-
-    exec_query_compare_result("SELECT * FROM t1_d ORDER BY id,val,name")
-
-    exec_query_compare_result("SELECT * FROM (SELECT id, name FROM t1_d WHERE id > 3) WHERE id > 4 ORDER BY id,name")
+def test_simple(started_cluster):
+    execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 100")
+    execute_and_compare("SELECT * FROM (SELECT a, b FROM t1_d WHERE a='1') WHERE b < 100 ORDER BY a, b LIMIT 100")

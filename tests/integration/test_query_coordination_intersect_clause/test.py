@@ -17,27 +17,69 @@ node5 = cluster.add_instance("node5", main_configs=["configs/remote_servers.xml"
 node6 = cluster.add_instance("node6", main_configs=["configs/remote_servers.xml"], with_zookeeper=True,
                              macros={"shard": 3, "replica": 2}, )
 
-
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
 
         node1.query(
-            """CREATE TABLE t1 ON CLUSTER test_cluster (id UInt32, val String, name String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/t1', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
+            """
+            CREATE TABLE t1 ON CLUSTER test_cluster (
+                a String,
+                b UInt64,
+                c UInt64
+            )
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/t1/{shard}', '{replica}')
+            ORDER BY a
+            SETTINGS index_granularity = 100;
+            """
         )
 
         node1.query(
-            """CREATE TABLE t1_d ON CLUSTER test_cluster (id UInt32, val String, name String) ENGINE = Distributed(test_cluster, default, t1, rand());"""
+            """
+            CREATE TABLE t1_d ON CLUSTER test_cluster (
+                a String,
+                b UInt64,
+                c UInt64
+            )
+            ENGINE = Distributed(test_cluster, default, t1, rand());
+            """
         )
 
         node1.query(
-            """CREATE TABLE t2 ON CLUSTER test_cluster (id UInt32, text String, scores UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/t2', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
+            """
+            CREATE TABLE t2 ON CLUSTER test_cluster (
+                a String,
+                b UInt64,
+                c UInt64
+            ) 
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/t2/{shard}', '{replica}') 
+            ORDER BY a 
+            SETTINGS index_granularity = 100;
+            """
         )
 
         node1.query(
-            """CREATE TABLE t2_d ON CLUSTER test_cluster (id UInt32, text String, scores UInt32) ENGINE = Distributed(test_cluster, default, t2, rand());"""
+            """
+            CREATE TABLE t2_d ON CLUSTER test_cluster (
+                a String,
+                b UInt64,
+                c UInt64
+            )
+            ENGINE = Distributed(test_cluster, default, t2, rand());
+            """
         )
+
+        node1.query(
+            "INSERT INTO t1_d SELECT toString(n % 10), n % 100, n % 1000 FROM (SELECT number as n FROM system.numbers limit 10000)")
+        node1.query(
+            "INSERT INTO t2_d SELECT toString(n % 5), n % 50, n % 500 FROM (SELECT number as n FROM system.numbers limit 1000)")
+
+        node1.query("SYSTEM FLUSH DISTRIBUTED t1_d")
+        node1.query("SYSTEM FLUSH DISTRIBUTED t2_d")
+
+        node1.query("analyze table t1_d")
+        node1.query("analyze table t2_d")
 
         yield cluster
 
@@ -45,34 +87,22 @@ def started_cluster():
         cluster.shutdown()
 
 
-def insert_data():
-    node1.query("INSERT INTO t1 SELECT id,'AAA','BBB' FROM generateRandom('id Int16') LIMIT 200")
-    node3.query("INSERT INTO t1 SELECT id,'BBB','CCC' FROM generateRandom('id Int16') LIMIT 300")
-    node5.query("INSERT INTO t1 SELECT id,'AAA','CCC' FROM generateRandom('id Int16') LIMIT 400")
-    node1.query("INSERT INTO t1_d SELECT id,'AAA','BBB' FROM generateRandom('id Int16') LIMIT 500")
-    node1.query("SYSTEM FLUSH DISTRIBUTED t1_d")
-
-    node1.query("INSERT INTO t2 SELECT id,'AAA',100 FROM generateRandom('id Int16') LIMIT 200")
-    node3.query("INSERT INTO t2 SELECT id,'BBB',95 FROM generateRandom('id Int16') LIMIT 300")
-    node5.query("INSERT INTO t2 SELECT id,'AAA',95 FROM generateRandom('id Int16') LIMIT 400")
-    node1.query("INSERT INTO t2_d SELECT id,'AAA',90 FROM generateRandom('id Int16') LIMIT 500")
-    node1.query("SYSTEM FLUSH DISTRIBUTED t2_d")
+def execute_and_compare(query_text, additional_settings=""):
+    settings = " SETTINGS allow_experimental_query_coordination = 0"
+    coordination_settings = " SETTINGS allow_experimental_query_coordination = 1"
+    if len(additional_settings) != 0:
+        settings = settings + ", " + additional_settings
+        coordination_settings = coordination_settings + ", " + additional_settings
+    result = node1.query(query_text + settings)
+    coordination_result = node1.query(query_text + coordination_settings)
+    assert result == coordination_result
 
 
-def exec_query_compare_result(query_text):
-    accurate_result = node1.query(query_text)
-    test_result = node1.query(query_text + " SETTINGS allow_experimental_query_coordination = 1")
-
-    print(accurate_result)
-    print(test_result)
-    assert accurate_result == test_result
+def test_intersect(started_cluster):
+    execute_and_compare(
+        "SELECT a FROM (SELECT a FROM t1_d ORDER BY a) INTERSECT SELECT a FROM (SELECT a FROM t2_d ORDER BY a) ORDER BY a")
 
 
-def test_query(started_cluster):
-    insert_data()
-
-    exec_query_compare_result(
-        "SELECT id FROM (SELECT id FROM t1_d ORDER BY id) INTERSECT SELECT id FROM (SELECT id FROM t2_d ORDER BY id) ORDER BY id")
-
-    exec_query_compare_result(
-        "SELECT id FROM (SELECT id FROM t1_d ORDER BY id) EXCEPT SELECT id FROM (SELECT id FROM t2_d ORDER BY id) ORDER BY id")
+def test_except(started_cluster):
+    execute_and_compare(
+        "SELECT a FROM (SELECT a FROM t1_d ORDER BY a) EXCEPT SELECT a FROM (SELECT a FROM t2_d ORDER BY a) ORDER BY a")

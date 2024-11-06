@@ -24,20 +24,63 @@ def started_cluster():
         cluster.start()
 
         node1.query(
-            """CREATE TABLE t1 ON CLUSTER test_cluster (id UInt32, val String, name String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/t1', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
+            """
+            CREATE TABLE t1 ON CLUSTER test_cluster (
+                a String,
+                b UInt64,
+                c UInt64
+            )
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/t1/{shard}', '{replica}')
+            ORDER BY a
+            SETTINGS index_granularity = 100;
+            """
         )
 
         node1.query(
-            """CREATE TABLE t1_d ON CLUSTER test_cluster (id UInt32, val String, name String) ENGINE = Distributed(test_cluster, default, t1, rand());"""
+            """
+            CREATE TABLE t1_d ON CLUSTER test_cluster (
+                a String,
+                b UInt64,
+                c UInt64
+            )
+            ENGINE = Distributed(test_cluster, default, t1, rand());
+            """
         )
 
         node1.query(
-            """CREATE TABLE t2 ON CLUSTER test_cluster (id UInt32, text String, scores UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/t2', '{replica}') ORDER BY id SETTINGS index_granularity=100;"""
+            """
+            CREATE TABLE t2 ON CLUSTER test_cluster (
+                a String,
+                b UInt64,
+                c UInt64
+            ) 
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/t2/{shard}', '{replica}') 
+            ORDER BY a 
+            SETTINGS index_granularity = 100;
+            """
         )
 
         node1.query(
-            """CREATE TABLE t2_d ON CLUSTER test_cluster (id UInt32, text String, scores UInt32) ENGINE = Distributed(test_cluster, default, t2, rand());"""
+            """
+            CREATE TABLE t2_d ON CLUSTER test_cluster (
+                a String,
+                b UInt64,
+                c UInt64
+            )
+            ENGINE = Distributed(test_cluster, default, t2, rand());
+            """
         )
+
+        node1.query(
+            "INSERT INTO t1_d SELECT toString(n % 10), n % 100, n % 1000 FROM (SELECT number as n FROM system.numbers limit 10000)")
+        node1.query(
+            "INSERT INTO t2_d SELECT toString(n % 5), n % 50, n % 500 FROM (SELECT number as n FROM system.numbers limit 1000)")
+
+        node1.query("SYSTEM FLUSH DISTRIBUTED t1_d")
+        node1.query("SYSTEM FLUSH DISTRIBUTED t2_d")
+
+        node1.query("analyze table t1_d")
+        node1.query("analyze table t2_d")
 
         yield cluster
 
@@ -45,27 +88,28 @@ def started_cluster():
         cluster.shutdown()
 
 
-def exec_query_compare_result(query_text):
-    accurate_result = node1.query(query_text)
-    test_result = node1.query(query_text + " SETTINGS allow_experimental_query_coordination = 1")
+def execute_and_compare(query_text, additional_settings=""):
+    settings = " SETTINGS allow_experimental_query_coordination = 0"
+    coordination_settings = " SETTINGS allow_experimental_query_coordination = 1"
+    if len(additional_settings) != 0:
+        settings = settings + ", " + additional_settings
+        coordination_settings = coordination_settings + ", " + additional_settings
+    result = node1.query(query_text + settings)
+    coordination_result = node1.query(query_text + coordination_settings)
+    assert result == coordination_result
 
-    print(accurate_result)
-    print(test_result)
-    assert accurate_result == test_result
+
+def test_simple(started_cluster):
+    execute_and_compare(
+        "SELECT * FROM (SELECT a, b, c FROM t1_d UNION ALL SELECT a, b, c + 1 FROM t2_d) ORDER BY a, b, c")
 
 
-def test_query(started_cluster):
-    node1.query("INSERT INTO t1_d SELECT id,'123','test' FROM generateRandom('id Int16') LIMIT 18")
-    node1.query("INSERT INTO t1_d SELECT id,'234','test1' FROM generateRandom('id Int16') LIMIT 20")
+def test_union_more_than_two_tables(started_cluster):
+    execute_and_compare(
+        "SELECT * FROM (SELECT a, b, c FROM t1_d UNION ALL SELECT a, b, c + 1 FROM t2_d UNION ALL SELECT a, b + 1, c + 1 FROM t2_d) ORDER BY a, b, c")
 
-    node1.query("INSERT INTO t2_d SELECT id,'123',10 FROM generateRandom('id Int16') LIMIT 20")
-    node1.query("INSERT INTO t2_d SELECT id,'234',12 FROM generateRandom('id Int16') LIMIT 25")
 
-    node1.query("SYSTEM FLUSH DISTRIBUTED t1_d")
-    node1.query("SYSTEM FLUSH DISTRIBUTED t2_d")
-
-    exec_query_compare_result(
-        "SELECT * FROM (SELECT id, val, name FROM t1_d UNION ALL SELECT id, text, toString(scores) FROM t2_d) ORDER BY id, val, name")
-
-    exec_query_compare_result(
-        "SELECT * FROM (SELECT id, val, name FROM t1_d UNION ALL SELECT id, text, toString(scores) FROM t2_d UNION ALL SELECT id, 'test_union', toString(scores) FROM t2_d) ORDER BY id, val, name")
+def test_union_inorder_and_not_in_order(started_cluster):
+    # The first 2 children of union will read in order by pk 'a', the 3td will not trigger reading in order.
+    execute_and_compare(
+        "SELECT * FROM (SELECT a, b, c FROM t1_d UNION ALL SELECT a, b, c + 1 FROM t2_d UNION ALL SELECT '1', b, c + 1 FROM t2_d) ORDER BY a, b, c")
