@@ -1,4 +1,5 @@
 #include <Optimizer/PhysicalProperty.h>
+#include <ranges>
 
 namespace DB
 {
@@ -57,6 +58,28 @@ String Distribution::toString() const
             break;
     }
     return ret;
+}
+
+Distribution Distribution::deriveOutputDistribution(const Distribution & lhs, const Distribution & rhs)
+{
+    if (lhs.type == Singleton && rhs.type == Singleton)
+        return {.type = Singleton};
+
+    if (lhs.type == Hashed && rhs.type == Hashed)
+    {
+        if (lhs.distributed_by_bucket_num == rhs.distributed_by_bucket_num)
+        {
+            if (lhs.keys.size() == rhs.keys.size())
+            {
+                for (const auto & key : lhs.keys)
+                    if (std::find(rhs.keys.cbegin(), rhs.keys.cend(), key) == rhs.keys.cend())
+                        break;
+                return rhs;
+            }
+        }
+    }
+
+    return {.type = Any};
 }
 
 bool PhysicalProperty::operator==(const PhysicalProperty & other) const

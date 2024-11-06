@@ -16,8 +16,8 @@ extern const SettingsUInt64 max_block_size;
 
 SplitTopN::SplitTopN(size_t id_) : Rule(id_)
 {
-    pattern.setStepType(TopN);
-    pattern.addChildren({Pattern(PatternAny)});
+    pattern.setStepType(StepType::TopN);
+    pattern.addChildren({Pattern(StepType::PatternAny)});
 }
 
 std::vector<SubQueryPlan> SplitTopN::transform(SubQueryPlan & sub_plan, ContextPtr context)

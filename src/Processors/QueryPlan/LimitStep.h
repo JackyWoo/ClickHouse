@@ -56,7 +56,7 @@ public:
 
     StepType stepType() const override
     {
-        return Limit;
+        return StepType::Limit;
     }
 
 private:

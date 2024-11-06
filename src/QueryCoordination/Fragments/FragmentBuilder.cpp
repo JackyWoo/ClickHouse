@@ -18,10 +18,8 @@ FragmentPtr FragmentBuilder::build()
         FragmentPtrs child_fragments = {};
     };
 
-    PlanNode * root = plan.getRootNode();
-
     std::stack<Frame> stack;
-    stack.push(Frame{.node = root});
+    stack.push(Frame{.node = plan.getRootNode()});
 
     FragmentPtr last_fragment;
 

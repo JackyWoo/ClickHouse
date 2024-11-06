@@ -9,8 +9,8 @@ namespace DB
 
 SplitAggregation::SplitAggregation(size_t id_) : Rule(id_)
 {
-    pattern.setStepType(Agg);
-    pattern.addChildren({Pattern(PatternAny)});
+    pattern.setStepType(StepType::Agg);
+    pattern.addChildren({Pattern(StepType::PatternAny)});
 }
 
 std::vector<SubQueryPlan> SplitAggregation::transform(SubQueryPlan & sub_plan, ContextPtr context)

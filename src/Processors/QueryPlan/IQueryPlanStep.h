@@ -19,7 +19,7 @@ namespace JSONBuilder { class JSONMap; }
 class QueryPlan;
 using QueryPlanRawPtrs = std::list<QueryPlan *>;
 
-enum StepType
+enum class StepType: uint8_t
 {
     Scan,
     Agg,

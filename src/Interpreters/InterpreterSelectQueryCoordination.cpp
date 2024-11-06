@@ -341,6 +341,10 @@ BlockIO InterpreterSelectQueryCoordination::execute()
     if (query_coordination_enabled)
     {
         buildFragments();
+        WriteBufferFromOwnString fragment_plan_desc;
+        fragments.front()->dump(fragment_plan_desc, {});
+        LOG_TRACE(log, "Fragment plan {}\n", fragment_plan_desc.str());
+
 
         /// save fragments wait for be scheduled
         res.query_coord_state.fragments = fragments;

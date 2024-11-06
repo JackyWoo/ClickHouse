@@ -95,7 +95,7 @@ public:
 
     StepType stepType() const override
     {
-        return Agg;
+        return StepType::Agg;
     }
 
 private:

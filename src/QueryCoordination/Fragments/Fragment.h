@@ -56,7 +56,7 @@ public:
         bool host = false; /// TODO implement
     };
 
-    Fragment(UInt32 fragment_id_, ContextMutablePtr context_);
+    explicit Fragment(UInt32 fragment_id_, ContextMutablePtr context_);
 
     void addStep(QueryPlanStepPtr step);
     void uniteFragments(QueryPlanStepPtr step, FragmentPtrs & fragments);
@@ -91,7 +91,7 @@ private:
     Node makeNewNode(QueryPlanStepPtr step, std::vector<PlanNode *> children_ = {});
     void explainPlan(WriteBuffer & buffer, const ExplainFragmentOptions & settings);
 
-    /// Build query pipeline for the fragment, note that it is a part of the whole distributed pepelines.
+    /// Build query pipeline for the fragment, note that it is a part of the whole distributed pipelines.
     QueryPipelineBuilderPtr buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings, const BuildQueryPipelineSettings & build_pipeline_settings);
 

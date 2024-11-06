@@ -11,26 +11,24 @@ class ExchangeDataStep final : public ISourceStep
 {
 public:
     ExchangeDataStep(
-        Distribution distribution_,
         const Header & output_header_,
         size_t max_block_size_,
-        SortDescription sort_description_ = {},
-        Sorting::Scope sort_scope_ = Sorting::Scope::None,
+        const Distribution & distribution_,
+        const Sorting & sorting_ = {},
         bool exchange_sink_merge = false,
         bool exchange_source_merge = false)
         : ISourceStep(output_header_)
         , max_block_size(max_block_size_)
         , distribution(distribution_)
-        , sort_description(sort_description_)
-        , sort_scope(sort_scope_)
+        , sorting(sorting_)
         , sink_merge(exchange_sink_merge)
         , source_merge(exchange_source_merge)
     {
-        setStepDescription("distributed by " + distribution.toString());
+        setStepDescription("distributed by " + distribution.toString() + ", sorted by " + sorting.toString());
     }
 
     String getName() const override { return "ExchangeData"; }
-    StepType stepType() const override { return Exchange; }
+    StepType stepType() const override { return StepType::Exchange; }
 
     void initializePipeline(QueryPipelineBuilder & /*pipeline*/, const BuildQueryPipelineSettings & /*settings*/) override;
 
@@ -42,8 +40,8 @@ public:
 
     Distribution::Type getDistributionType() const { return distribution.type; }
     const Distribution & getDistribution() const { return distribution; }
-    const SortDescription & getSortDescription() const override { return sort_description; }
-    Sorting::Scope  getSortScope() const { return sort_scope; }
+    const SortDescription & getSortDescription() const override { return sorting.sort_description; }
+    Sorting::Scope getSortScope() const { return sorting.sort_scope; }
 
     bool isSingleton() const { return distribution.type == Distribution::Singleton; }
     bool sinkMerge() const { return sink_merge; }
@@ -59,8 +57,9 @@ private:
     size_t max_block_size;
 
     Distribution distribution;
-    SortDescription sort_description;
-    Sorting::Scope sort_scope;
+
+    /// Output sorting of mine
+    Sorting sorting;
 
     bool sink_merge;
     bool source_merge;

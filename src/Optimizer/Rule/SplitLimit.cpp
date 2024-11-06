@@ -15,8 +15,8 @@ extern const SettingsBool exact_rows_before_limit;
 
 SplitLimit::SplitLimit(size_t id_) : Rule(id_)
 {
-    pattern.setStepType(Limit);
-    pattern.addChildren({Pattern(PatternAny)});
+    pattern.setStepType(StepType::Limit);
+    pattern.addChildren({Pattern(StepType::PatternAny)});
 }
 
 std::vector<SubQueryPlan> SplitLimit::transform(SubQueryPlan & sub_plan, ContextPtr context)

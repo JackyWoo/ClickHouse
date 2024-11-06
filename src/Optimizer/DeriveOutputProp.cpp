@@ -82,8 +82,12 @@ PhysicalProperty DeriveOutputProp::visit(UnionStep & step)
         sort_scope = std::min(sort_scope, child_properties[i].sorting.sort_scope);
     }
 
+    Distribution distribution = child_properties[0].distribution;
+    for (size_t i = 1; i < step.getInputHeaders().size(); ++i)
+        distribution = Distribution::deriveOutputDistribution(distribution, child_properties[i].distribution);
+
     PhysicalProperty res;
-    res.distribution = child_properties[0].distribution;// TODO really?
+    res.distribution = distribution;
     res.sorting = {.sort_description = std::move(common_sort_description), .sort_scope = sort_scope};
     return res;
 }

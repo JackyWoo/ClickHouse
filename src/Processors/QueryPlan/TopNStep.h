@@ -50,7 +50,7 @@ public:
 
     StepType stepType() const override
     {
-        return TopN;
+        return StepType::TopN;
     }
 
     SortingStep::Type sortType() const

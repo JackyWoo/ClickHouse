@@ -125,17 +125,31 @@ AlternativeChildProperties DeriveRequiredChildProps::visit(FilterStep & /*step*/
 AlternativeChildProperties DeriveRequiredChildProps::visit(TopNStep & step)
 {
     PhysicalProperty required_child_prop;
-    if (step.sortType() == SortingStep::Type::FinishSorting)
+    /// Deriving soring
+    if (step.getPhase() == TopNStep::Phase::Preliminary || step.getPhase() == TopNStep::Phase::Unknown)
     {
-        required_child_prop.sorting.sort_scope = Sorting::Scope::Stream;
-        required_child_prop.sorting.sort_description = step.getPrefixDescription();
+        if (step.sortType() == SortingStep::Type::FinishSorting)
+        {
+            required_child_prop.sorting.sort_scope = Sorting::Scope::Stream;
+            required_child_prop.sorting.sort_description = step.getPrefixDescription();
+        }
+        else if (step.sortType() == SortingStep::Type::MergingSorted)
+        {
+            required_child_prop.sorting.sort_scope = Sorting::Scope::Stream;
+            required_child_prop.sorting.sort_description = step.getSortDescription();
+        }
+        else
+        {
+            /// no requirement for full sorting
+        }
     }
-    else if (step.sortType() == SortingStep::Type::MergingSorted)
+    else
     {
         required_child_prop.sorting.sort_scope = Sorting::Scope::Stream;
         required_child_prop.sorting.sort_description = step.getSortDescription();
     }
 
+    /// Deriving distribution
     if (step.getPhase() == TopNStep::Phase::Preliminary)
         required_child_prop.distribution = {.type = Distribution::Any};
     else
@@ -146,20 +160,36 @@ AlternativeChildProperties DeriveRequiredChildProps::visit(TopNStep & step)
 AlternativeChildProperties DeriveRequiredChildProps::visit(SortingStep & step)
 {
     PhysicalProperty required_child_prop;
-    if (step.getType() == SortingStep::Type::FinishSorting)
+    /// Deriving soring
+    if (step.getPhase() == SortingStep::Phase::Preliminary || step.getPhase() == SortingStep::Phase::Unknown)
     {
-        required_child_prop.sorting.sort_scope = Sorting::Scope::Stream;
-        required_child_prop.sorting.sort_description = step.getPrefixDescription();
+        if (step.getType() == SortingStep::Type::FinishSorting)
+        {
+            required_child_prop.sorting.sort_scope = Sorting::Scope::Stream;
+            required_child_prop.sorting.sort_description = step.getPrefixDescription();
+        }
+        else if (step.getType() == SortingStep::Type::MergingSorted)
+        {
+            required_child_prop.sorting.sort_scope = Sorting::Scope::Stream;
+            required_child_prop.sorting.sort_description = step.getSortDescription();
+        }
+        else
+        {
+            /// no requirement for full sorting
+        }
     }
-    else if (step.getType() == SortingStep::Type::MergingSorted)
+    else
     {
         required_child_prop.sorting.sort_scope = Sorting::Scope::Stream;
         required_child_prop.sorting.sort_description = step.getSortDescription();
     }
+
+    /// Deriving distribution
     if (step.getPhase() == SortingStep::Phase::Preliminary)
         required_child_prop.distribution = {.type = Distribution::Any};
     else
         required_child_prop.distribution = {.type = Distribution::Singleton};
+
     return {{required_child_prop}};
 }
 
@@ -272,11 +302,12 @@ AlternativeChildProperties DeriveRequiredChildProps::visit(CreatingSetsStep & st
     return {required_child_prop};
 }
 
-AlternativeChildProperties DeriveRequiredChildProps::visit(UnionStep & /*step*/)
+AlternativeChildProperties DeriveRequiredChildProps::visit(UnionStep & step)
 {
     ChildProperties required_child_prop;
-    required_child_prop.push_back({.distribution = {.type = Distribution::Any}});
-    required_child_prop.push_back({.distribution = {.type = Distribution::Any}});
+    /// union can have more than 2 children
+    for (size_t i = 0; i < step.getInputHeaders().size(); i++)
+        required_child_prop.push_back({.distribution = {.type = Distribution::Any}});
     return {required_child_prop};
 }
 

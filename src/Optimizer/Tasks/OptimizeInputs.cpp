@@ -208,48 +208,42 @@ Cost OptimizeInputs::enforceGroupNode(const PhysicalProperty & required_prop, co
     std::shared_ptr<ExchangeDataStep> exchange_step;
 
     size_t max_block_size = task_context->getQueryContext()->getSettingsRef()[Setting::max_block_size];
+
     /// Because the ordering of data may be changed after adding Exchange in a distributed manner,
     /// we need to retain the order of data during exchange if there is a requirement for data sorting.
+    Sorting sorting;
+    bool merging_sort_when_sink = false;
+    bool merging_sort_when_source = false;
+
     if (required_prop.sorting.sort_scope == Sorting::Scope::Stream
         && output_prop.sorting.sort_scope >= Sorting::Scope::Stream)
     {
-        exchange_step = std::make_shared<ExchangeDataStep>(
-            required_prop.distribution,
-            group_node->getStep()->getOutputHeader(),
-            max_block_size,
-            required_prop.sorting.sort_description,
-            Sorting::Scope::Stream,
-            true);
+        sorting = {.sort_description = required_prop.sorting.sort_description, .sort_scope = Sorting::Scope::Stream};
+        merging_sort_when_sink = true;
     }
     else if (required_prop.sorting.sort_scope == Sorting::Scope::Global)
     {
-        exchange_step = std::make_shared<ExchangeDataStep>(
-            required_prop.distribution,
-            group_node->getStep()->getOutputHeader(),
-            max_block_size,
-            required_prop.sorting.sort_description,
-            Sorting::Scope::Global,
-            true,
-            true);
+        sorting = {.sort_description = required_prop.sorting.sort_description, .sort_scope = Sorting::Scope::Global};
+        merging_sort_when_sink = true;
+        merging_sort_when_source = true;
     }
-    else if (output_prop.sorting.sort_scope == Sorting::Scope::Chunk
-        && required_prop.distribution.type != Distribution::Type::Hashed)
-    {
-        /// We can keep the sort info if distribution type is not hash.
-        exchange_step = std::make_shared<ExchangeDataStep>(
-            required_prop.distribution,
-            group_node->getStep()->getOutputHeader(),
-            max_block_size,
-            required_prop.sorting.sort_description,
-            Sorting::Scope::Chunk,
-            false,
-            false);
-    }
+    // else if (output_prop.sorting.sort_scope == Sorting::Scope::Chunk /// Not used right now
+    //     && required_prop.distribution.type != Distribution::Type::Hashed)
+    // {
+    //     /// We can keep the sort info if distribution type is not hash.
+    //     sorting = {.sort_description = required_prop.sorting.sort_description, .sort_scope = Sorting::Scope::Chunk};
+    // }
     else
     {
-        exchange_step
-            = std::make_shared<ExchangeDataStep>(required_prop.distribution, group_node->getStep()->getOutputHeader(), max_block_size);
     }
+
+    exchange_step = std::make_shared<ExchangeDataStep>(
+        group_node->getStep()->getOutputHeader(),
+        max_block_size,
+        required_prop.distribution,
+        sorting,
+        merging_sort_when_sink,
+        merging_sort_when_source);
 
     auto & group = task_context->getCurrentGroup();
 

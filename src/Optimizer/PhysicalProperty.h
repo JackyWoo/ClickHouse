@@ -19,8 +19,11 @@ struct Distribution
     };
 
     String toString() const;
-
     bool isHashed() const { return type == Hashed; }
+
+    /// Calculate the output distribution based on the children inputs.
+    /// Used for union step.
+    static Distribution deriveOutputDistribution(const Distribution & lhs, const Distribution & rhs);
 
     Type type;
     Names keys; /// keys for Hashed
@@ -34,7 +37,8 @@ struct Sorting
         None = 0,   /// Not sorted
         Chunk = 1,  /// Each chunk is sorted
         Stream = 2, /// Each data steam is sorted
-        Global = 3, /// Data is globally sorted
+        // Server = 3, /// Data is sorted in a server
+        Global = 4, /// Data is globally sorted
     };
 
     String toString() const;

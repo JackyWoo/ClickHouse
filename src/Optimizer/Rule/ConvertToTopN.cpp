@@ -8,9 +8,9 @@ namespace DB
 
 ConvertToTopN::ConvertToTopN(size_t id_) : Rule(id_)
 {
-    pattern.setStepType(Limit);
-    Pattern child_pattern(Sort);
-    child_pattern.addChildren({Pattern(PatternAny)});
+    pattern.setStepType(StepType::Limit);
+    Pattern child_pattern(StepType::Sort);
+    child_pattern.addChildren({Pattern(StepType::PatternAny)});
     pattern.addChildren({child_pattern});
 }
 

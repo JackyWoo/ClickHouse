@@ -16,7 +16,7 @@ public:
 
     void describePipeline(FormatSettings & settings) const override;
 
-    StepType stepType() const override { return Scan; }
+    StepType stepType() const override { return StepType::Scan; }
 
 protected:
     void updateOutputHeader() override {}

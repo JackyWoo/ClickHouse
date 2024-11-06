@@ -16,8 +16,8 @@ extern const SettingsBool exact_rows_before_limit;
 
 SplitSort::SplitSort(size_t id_) : Rule(id_)
 {
-    pattern.setStepType(Sort);
-    pattern.addChildren({Pattern(PatternAny)});
+    pattern.setStepType(StepType::Sort);
+    pattern.addChildren({Pattern(StepType::PatternAny)});
 }
 
 std::vector<SubQueryPlan> SplitSort::transform(SubQueryPlan & sub_plan, ContextPtr context)

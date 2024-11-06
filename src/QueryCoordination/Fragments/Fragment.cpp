@@ -136,7 +136,7 @@ void Fragment::uniteFragments(QueryPlanStepPtr step, FragmentPtrs & fragments)
 
         nodes.splice(nodes.end(), std::move(fragment->nodes));
 
-        for (auto & child_fragment : fragment->children)
+        for (const auto & child_fragment : fragment->children)
         {
             /// update fragment_id
             auto * exchange_step = typeid_cast<ExchangeDataStep *>(child_fragment->dest_exchange_node->step.get());
@@ -149,7 +149,7 @@ void Fragment::uniteFragments(QueryPlanStepPtr step, FragmentPtrs & fragments)
     nodes.emplace_back(makeNewNode(std::move(step)));
     root = &nodes.back();
 
-    for (auto & fragment : fragments)
+    for (const auto & fragment : fragments)
         root->children.emplace_back(fragment->root);
 }
 

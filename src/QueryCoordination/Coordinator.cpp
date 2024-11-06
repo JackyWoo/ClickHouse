@@ -10,6 +10,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
+#include <ranges>
 
 namespace DB
 {
@@ -17,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int SYSTEM_ERROR;
+extern const int CLUSTER_DOESNT_EXIST;
 }
 
 namespace Setting
@@ -25,35 +27,30 @@ extern const SettingsSeconds max_execution_time;
 extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
 }
 
-Coordinator::Coordinator(const FragmentPtrs & fragments_, ContextMutablePtr context_, String query_)
-    : log(&Poco::Logger::get("Coordinator")), fragments(fragments_), context(context_), query(query_)
+Coordinator::Coordinator(const FragmentPtrs & fragments_, const ContextMutablePtr & context_, const String & query_)
+    :context(context_), query(query_), fragments(fragments_), log(&Poco::Logger::get("Coordinator"))
 {
     for (const auto & fragment : fragments)
     {
         auto fragment_id = fragment->getFragmentID();
-        id_fragment[fragment_id] = fragment;
+        id_to_fragment[fragment_id] = fragment;
     }
 }
 
 void Coordinator::schedulePrepareDistributedPipelines()
 {
-    // If the fragment has a scan step, it is scheduled according to the cluster copy fragment
+    // If the fragment has a scan step, it is scheduled according to the cluster topology
     assignFragmentToHost();
 
     for (auto & [host, fragment_ids] : host_fragments)
         for (auto & fragment : fragment_ids)
             LOG_DEBUG(log, "host_fragment_ids: host {}, fragment {}", host, fragment->getFragmentID());
 
-    for (auto & [fragment_id, hosts] : fragment_hosts)
-        for (auto & host : hosts)
-            LOG_DEBUG(log, "fragment_id_hosts: host {}, fragment {}", host, fragment_id);
-
     sendFragmentsToPreparePipelines();
-
     sendBeginExecutePipelines();
 }
 
-PoolBase<DB::Connection>::Entry Coordinator::getConnection(const Cluster::ShardInfo & shard_info, const QualifiedTableName & table_name)
+PoolBase<DB::Connection>::Entry Coordinator::getConnection(const Cluster::ShardInfo & shard_info, const QualifiedTableName & table_name) const
 {
     const auto & current_settings = context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings).getSaturated(current_settings[Setting::max_execution_time]);
@@ -61,7 +58,7 @@ PoolBase<DB::Connection>::Entry Coordinator::getConnection(const Cluster::ShardI
     return try_results[0].entry;
 }
 
-PoolBase<DB::Connection>::Entry Coordinator::getConnection(const Cluster::ShardInfo & shard_info)
+PoolBase<DB::Connection>::Entry Coordinator::getConnection(const Cluster::ShardInfo & shard_info) const
 {
     auto current_settings = context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings).getSaturated(current_settings[Setting::max_execution_time]);
@@ -69,18 +66,30 @@ PoolBase<DB::Connection>::Entry Coordinator::getConnection(const Cluster::ShardI
     return try_results[0];
 }
 
-std::unordered_map<UInt32, std::vector<String>> Coordinator::assignSourceFragment()
+FragmentToHosts Coordinator::assignSourceFragment()
 {
-    std::unordered_map<UInt32, std::vector<String>> scan_fragment_hosts;
+    FragmentToHosts scan_fragment_hosts;
     for (const auto & fragment : fragments)
     {
-        auto fragment_id = fragment->getFragmentID();
-        for (const auto & node : fragment->getNodes())
-        {
-            if (node.step->stepType() != StepType::Scan)
-                continue;
+        /// Some fragments maight have multiple scan steps, we need only assign the segment based on one of the scan steps.
+        ///
+        ///            union
+        ///           /     \
+        ///  expression     expression
+        ///         /         \
+        ///      scan         scan
+        auto any_scan_it = std::ranges::find_if(
+            fragment->getNodes().cbegin(),
+            fragment->getNodes().cend(),
+            [](const auto & node) { return node.step->stepType() == StepType::Scan; });
 
-            auto cluster = context->getClusters().find(context->getQueryCoordinationMetaInfo().cluster_name)->second;
+        if (any_scan_it != fragment->getNodes().cend())
+        {
+            if (!context->getClusters().contains(context->getQueryCoordinationMetaInfo().cluster_name))
+                throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "Cluster {} does not exist", context->getQueryCoordinationMetaInfo().cluster_name);
+
+            const auto & cluster = context->getClusters().find(context->getQueryCoordinationMetaInfo().cluster_name)->second;
+
             for (const auto & shard_info : cluster->getShardsInfo())
             {
                 PoolBase<DB::Connection>::Entry connection;
@@ -90,7 +99,8 @@ std::unordered_map<UInt32, std::vector<String>> Coordinator::assignSourceFragmen
                     local_host = shard_info.local_addresses[0].toString();
                     host_port = local_host;
 
-                    if (auto * read_step = typeid_cast<ReadFromMergeTree *>(node.step.get()))
+                    const auto& node = *any_scan_it;
+                    if (const auto * read_step = typeid_cast<ReadFromMergeTree *>(node.step.get()))
                     {
                         const auto & table_name = read_step->getStorageSnapshot()->storage.getStorageID().getQualifiedName();
                         if (!isUpToDate(table_name))
@@ -106,9 +116,9 @@ std::unordered_map<UInt32, std::vector<String>> Coordinator::assignSourceFragmen
                     host_port = connection->getHostPort();
                 }
 
-                host_connection[host_port] = connection;
-
+                auto fragment_id = fragment->getFragmentID();
                 scan_fragment_hosts[fragment_id].emplace_back(host_port);
+                host_connection[host_port] = connection;
                 fragment_hosts[fragment_id].emplace_back(host_port);
                 host_fragments[host_port].emplace_back(fragment);
             }
@@ -120,84 +130,86 @@ std::unordered_map<UInt32, std::vector<String>> Coordinator::assignSourceFragmen
 
 void Coordinator::assignFragmentToHost()
 {
-    const std::unordered_map<UInt32, std::vector<String>> & scan_fragment_hosts = assignSourceFragment();
+    /// Process leaf fragments
+    const std::unordered_map<UInt32, std::vector<String>> scan_fragment_hosts = assignSourceFragment();
 
-    // For a fragment with a scan step, process its dest fragment.
+    // For a fragment with a scan step, process its destination (parent) fragment.
 
     auto process_other_fragment
-        = [this](std::unordered_map<UInt32, std::vector<String>> & fragment_hosts_) -> std::unordered_map<UInt32, std::vector<String>>
+        = [this](FragmentToHosts & fragment_hosts_) -> FragmentToHosts
     {
-        std::unordered_map<UInt32, std::vector<String>> this_fragment_hosts;
+        FragmentToHosts this_fragment_hosts;
         for (const auto & [fragment_id, hosts] : fragment_hosts_)
         {
-            auto dest_fragment_id = id_fragment[fragment_id]->getDestFragmentID();
+            const auto & fragment = id_to_fragment[fragment_id];
+            auto dest_fragment_id = fragment->getDestFragmentID();
 
-            if (!id_fragment[fragment_id]->hasDestFragment())
+            if (!fragment->hasDestFragment())
                 return this_fragment_hosts;
 
-            auto dest_fragment = id_fragment[dest_fragment_id];
+            auto dest_fragment = id_to_fragment[dest_fragment_id];
 
-            /// dest_fragment scheduling by the left node
+            /// dest_fragment scheduling by the first child node
             if (dest_fragment->getChildren().size() > 1)
             {
                 if (fragment_id != dest_fragment->getChildren()[0]->getFragmentID())
                     continue;
             }
 
-            if (fragment_hosts_.contains(dest_fragment->getFragmentID()))
+            if (fragment_hosts_.contains(dest_fragment_id))
                 return this_fragment_hosts;
 
-            if (typeid_cast<ExchangeDataStep *>(id_fragment[fragment_id]->getDestExchangeNode()->step.get())->isSingleton())
+            if (typeid_cast<ExchangeDataStep *>(fragment->getDestExchangeNode()->step.get())->isSingleton())
             {
                 if (!dest_fragment->hasDestFragment()) /// root fragment
                 {
                     host_fragments[local_host].emplace_back(dest_fragment);
-                    fragment_hosts[dest_fragment->getFragmentID()].emplace_back(local_host);
-                    this_fragment_hosts[dest_fragment->getFragmentID()].emplace_back(local_host);
+                    fragment_hosts[dest_fragment_id].emplace_back(local_host);
+                    this_fragment_hosts[dest_fragment_id].emplace_back(local_host);
                 }
                 else
                 {
-                    const auto & host = hosts[0];
+                    const auto & host = hosts[0]; /// multiple node -> single node, choose the first node /// TODO use local host
                     host_fragments[host].emplace_back(dest_fragment);
-                    fragment_hosts[dest_fragment->getFragmentID()].emplace_back(host);
-                    this_fragment_hosts[dest_fragment->getFragmentID()].emplace_back(host);
+                    fragment_hosts[dest_fragment_id].emplace_back(host);
+                    this_fragment_hosts[dest_fragment_id].emplace_back(host);
                 }
-
-                continue;
             }
-
-            for (const auto & host : hosts)
+            else  /// Hashed
             {
-                auto & dest_hosts = fragment_hosts[dest_fragment->getFragmentID()];
-                if (!std::count(dest_hosts.begin(), dest_hosts.end(), host))
+                for (const auto & host : hosts)
                 {
-                    host_fragments[host].emplace_back(dest_fragment);
-                    dest_hosts.emplace_back(host);
-                    this_fragment_hosts[dest_fragment->getFragmentID()].emplace_back(host);
+                    auto & dest_hosts = fragment_hosts[dest_fragment_id];
+                    if (!std::ranges::count(dest_hosts.begin(), dest_hosts.end(), host))
+                    {
+                        host_fragments[host].emplace_back(dest_fragment);
+                        dest_hosts.emplace_back(host);
+                        this_fragment_hosts[dest_fragment_id].emplace_back(host);
+                    }
                 }
             }
+
         }
         return this_fragment_hosts;
     };
 
-    std::optional<std::unordered_map<UInt32, std::vector<String>>> fragment_hosts_(scan_fragment_hosts);
+    std::optional<FragmentToHosts> fragment_hosts_(scan_fragment_hosts);
     while (!fragment_hosts_->empty())
     {
-        std::unordered_map<UInt32, std::vector<String>> tmp_fragment_hosts = process_other_fragment(fragment_hosts_.value());
-        fragment_hosts_->swap(tmp_fragment_hosts);
+        auto tmp = process_other_fragment(fragment_hosts_.value());
+        fragment_hosts_->swap(tmp);
     }
 }
 
-bool Coordinator::isUpToDate(const QualifiedTableName & table_name)
+bool Coordinator::isUpToDate(const QualifiedTableName & table_name) const
 {
-    auto context_to_resolve_table_names = context;
-    auto resolved_id = context_to_resolve_table_names->tryResolveStorageID({table_name.database, table_name.table});
-    StoragePtr table = DatabaseCatalog::instance().tryGetTable(resolved_id, context_to_resolve_table_names);
+    const auto resolved_id = context->tryResolveStorageID({table_name.database, table_name.table});
+    const StoragePtr table = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
     if (!table)
         return false;
 
     TableStatus status;
-    if (auto * replicated_table = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
+    if (const auto * replicated_table = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
     {
         status.is_replicated = true;
         status.absolute_delay = static_cast<UInt32>(replicated_table->getAbsoluteDelay());
@@ -206,7 +218,7 @@ bool Coordinator::isUpToDate(const QualifiedTableName & table_name)
         status.is_replicated = false;
 
     bool is_up_to_date;
-    UInt64 max_allowed_delay = UInt64(context->getSettingsRef()[Setting::max_replica_delay_for_distributed_queries]);
+    UInt64 max_allowed_delay = context->getSettingsRef()[Setting::max_replica_delay_for_distributed_queries];
     if (!max_allowed_delay)
     {
         is_up_to_date = true;
@@ -238,8 +250,8 @@ std::unordered_map<UInt32, FragmentRequest> Coordinator::buildFragmentRequest()
     {
         auto & request = fragment_requests[fragment_id];
 
-        auto fragment = id_fragment[fragment_id];
-        auto dest_fragment = id_fragment[fragment->getDestFragmentID()];
+        auto fragment = id_to_fragment[fragment_id];
+        auto dest_fragment = id_to_fragment[fragment->getDestFragmentID()];
 
         Destinations data_to;
         if (dest_fragment)

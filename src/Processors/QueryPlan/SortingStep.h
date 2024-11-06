@@ -108,7 +108,7 @@ public:
 
     StepType stepType() const override
     {
-        return Sort;
+        return StepType::Sort;
     }
 
     std::shared_ptr<SortingStep> clone()

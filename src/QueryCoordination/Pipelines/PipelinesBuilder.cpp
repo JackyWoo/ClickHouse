@@ -30,7 +30,7 @@ Pipelines PipelinesBuilder::build()
         String local_host; /// for DataSink, we need tell peer who am i.
 
         auto all_addresses = cluster->getShardsAddresses();
-        auto & shards_info = cluster->getShardsInfo();
+        const auto & shards_info = cluster->getShardsInfo();
 
         for (size_t i = 0; i < all_addresses.size(); i++)
         {
@@ -77,7 +77,7 @@ Pipelines PipelinesBuilder::build()
 
         WriteBufferFromOwnString buffer;
         fragment->explainPipeline(buffer, false);
-        LOG_TRACE(log, "Fragment {} explain pipeline: {}", fragment->getFragmentID(), buffer.str());
+        LOG_TRACE(log, "Fragment {} explain pipeline: {}\n", fragment->getFragmentID(), buffer.str());
 
         // register ExchangeDataSource
         for (const auto & processor : pipeline.getProcessors())

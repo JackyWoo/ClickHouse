@@ -9,6 +9,10 @@ namespace DB
 
 Memo::Memo(QueryPlan && plan, ContextPtr context_) : context(context_)
 {
+    WriteBufferFromOwnString plan_desc;
+    plan.explainPlan(plan_desc, {});
+    LOG_TRACE(log, "Initialize memo based on plan\n {}", plan_desc.str());
+
     root_group = &buildGroup(*plan.getRootNode());
 
     /// Required distribution of children of root is always singleton
