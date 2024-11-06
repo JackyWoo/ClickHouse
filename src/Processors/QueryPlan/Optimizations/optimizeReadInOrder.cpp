@@ -1081,6 +1081,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 
             if (additional_sorting)
             {
+                typeid_cast<SortingStep *>(additional_sorting.get())->setPhase(SortingStep::Phase::Preliminary);
                 auto & sort_node = nodes.emplace_back();
                 sort_node.step = std::move(additional_sorting);
                 sort_node.children.push_back(child);
