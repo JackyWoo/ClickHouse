@@ -45,8 +45,8 @@ public:
         return limit->getLimit() + limit->getOffset();
     }
 
-    std::shared_ptr<TopNStep> makePreliminary(bool exact_rows_before_limit);
-    std::shared_ptr<TopNStep> makeFinal(const Header & input_header, size_t max_block_size, bool exact_rows_before_limit);
+    std::shared_ptr<TopNStep> makePreliminary(bool exact_rows_before_limit) const;
+    std::shared_ptr<TopNStep> makeFinal(const Header & input_header, size_t max_block_size, bool exact_rows_before_limit) const;
 
     StepType stepType() const override
     {

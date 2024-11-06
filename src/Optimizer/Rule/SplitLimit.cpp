@@ -35,7 +35,12 @@ std::vector<SubQueryPlan> SplitLimit::transform(SubQueryPlan & sub_plan, Context
         return {};
 
     auto pre_limit = std::make_shared<LimitStep>(
-        limit_step->getInputHeaders().front(), limit_step->getLimitForSorting(), 0, context->getSettingsRef()[Setting::exact_rows_before_limit]);
+        limit_step->getInputHeaders().front(),
+        limit_step->getLimitForSorting(), /// limit 10, 10 -> limit 0, 20
+        0,
+        context->getSettingsRef()[Setting::exact_rows_before_limit],
+        limit_step->withTies(),
+        limit_step->getSortDescription());
     pre_limit->setPhase(LimitStep::Phase::Preliminary);
     pre_limit->setStepDescription("Preliminary");
 
@@ -43,7 +48,9 @@ std::vector<SubQueryPlan> SplitLimit::transform(SubQueryPlan & sub_plan, Context
         limit_step->getInputHeaders().front(),
         limit_step->getLimit(),
         limit_step->getOffset(),
-        context->getSettingsRef()[Setting::exact_rows_before_limit]);
+        context->getSettingsRef()[Setting::exact_rows_before_limit],
+        limit_step->withTies(),
+        limit_step->getSortDescription());
     final_limit->setPhase(LimitStep::Phase::Final);
     final_limit->setStepDescription("Final");
 
