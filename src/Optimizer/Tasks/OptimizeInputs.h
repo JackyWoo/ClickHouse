@@ -65,11 +65,11 @@ public:
 private:
     OptimizeTaskPtr clone();
 
-    Cost enforceGroupNode(const PhysicalProperty & required_prop, const PhysicalProperty & output_prop);
+    Cost enforceGroupNode(const PhysicalProperty & required_prop, const PhysicalProperty & output_prop) const;
 
     /// Try best to use two level aggregation. TODO some keys e.g. uint8 does not support two-level aggregation.
     /// Exchange step now shuffle data by the bucket of the two-level hashmap, and right now it des not support shuffles data by key, TODO support it.
-    void enforceTwoLevelAggIfNeed(const PhysicalProperty & required_prop);
+    void enforceTwoLevelAggIfNeed(const PhysicalProperty & required_prop) const;
 
     GroupNodePtr group_node;
     std::unique_ptr<Frame> frame;

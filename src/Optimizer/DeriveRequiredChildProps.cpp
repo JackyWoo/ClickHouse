@@ -337,7 +337,7 @@ AlternativeChildProperties DeriveRequiredChildProps::visit(CreatingSetsStep & st
         replicated_child_prop.push_back({.distribution = {.type = Distribution::Replicated}});
 
     ChildProperties singleton_child_prop;
-    singleton_child_prop.push_back({.distribution = {.type = Distribution::Any}, .sorting = required_sort_prop});
+    singleton_child_prop.push_back({.distribution = {.type = Distribution::Singleton}, .sorting = required_sort_prop});
     for (size_t i=0; i<step.getInputHeaders().size(); i++)
         singleton_child_prop.push_back({.distribution = {.type = Distribution::Singleton}});
 

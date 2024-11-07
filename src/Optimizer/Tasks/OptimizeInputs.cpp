@@ -145,7 +145,8 @@ void OptimizeInputs::execute()
                     "Can not derive valid output property by child properties {} and required {}, discard the solution",
                     PhysicalProperty::toString(frame->actual_children_prop),
                     required_prop.toString());
-                break;
+                frame->resetAlternativeState();
+                continue;
             }
             LOG_TRACE(log, "Derived output property {}", output_prop->toString());
 
@@ -196,7 +197,7 @@ void OptimizeInputs::execute()
     }
 }
 
-void OptimizeInputs::enforceTwoLevelAggIfNeed(const PhysicalProperty & required_prop)
+void OptimizeInputs::enforceTwoLevelAggIfNeed(const PhysicalProperty & required_prop) const
 {
     if (!(required_prop.distribution.type == Distribution::Type::Hashed && required_prop.distribution.distributed_by_bucket_num))
         return;
@@ -211,7 +212,7 @@ void OptimizeInputs::enforceTwoLevelAggIfNeed(const PhysicalProperty & required_
     aggregate_step->enforceTwoLevelAgg();
 }
 
-Cost OptimizeInputs::enforceGroupNode(const PhysicalProperty & required_prop, const PhysicalProperty & output_prop)
+Cost OptimizeInputs::enforceGroupNode(const PhysicalProperty & required_prop, const PhysicalProperty & output_prop) const
 {
     LOG_TRACE(log, "Enforcing ExchangeData required_prop: {}, output_prop {}", required_prop.toString(), output_prop.toString());
     std::shared_ptr<ExchangeDataStep> exchange_step;
