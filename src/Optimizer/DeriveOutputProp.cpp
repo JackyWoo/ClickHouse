@@ -35,12 +35,12 @@ DeriveOutputProp::DeriveOutputProp(
 {
 }
 
-PhysicalProperty DeriveOutputProp::visit(const QueryPlanStepPtr & step)
+std::optional<PhysicalProperty> DeriveOutputProp::visit(const QueryPlanStepPtr & step)
 {
     return Base::visit(step);
 }
 
-PhysicalProperty DeriveOutputProp::visitDefault(IQueryPlanStep & step)
+std::optional<PhysicalProperty> DeriveOutputProp::visitDefault(IQueryPlanStep & step)
 {
     PhysicalProperty res;
     res.distribution = child_properties[0].distribution;
@@ -71,9 +71,27 @@ PhysicalProperty DeriveOutputProp::visitDefault(IQueryPlanStep & step)
     return res;
 }
 
-PhysicalProperty DeriveOutputProp::visit(UnionStep & step)
+std::optional<PhysicalProperty> DeriveOutputProp::visit(CreatingSetsStep & step)
 {
-    SortDescription common_sort_description = std::move(child_properties[0].sorting.sort_description);
+    /// check whether the input distributions are compatible, if not return blank.
+    const auto & main_plan_branch_prop = child_properties[0];
+    for (size_t i=1; i< step.getInputHeaders().size(); i++)
+        if (!Distribution::checkInputDistributions(main_plan_branch_prop.distribution, child_properties[1].distribution))
+            return {};
+    /// CreatingSetsStep will keep the physical property of the main plan branch
+    return main_plan_branch_prop;
+}
+
+std::optional<PhysicalProperty> DeriveOutputProp::visit(CreatingSetStep & /*step*/)
+{
+    PhysicalProperty res;
+    res.distribution = child_properties[0].distribution;
+    return res;
+}
+
+std::optional<PhysicalProperty> DeriveOutputProp::visit(UnionStep & step)
+{
+    SortDescription common_sort_description = child_properties[0].sorting.sort_description;
     auto sort_scope = child_properties[0].sorting.sort_scope;
 
     for (size_t i = 1; i < step.getInputHeaders().size(); ++i)
@@ -92,7 +110,7 @@ PhysicalProperty DeriveOutputProp::visit(UnionStep & step)
     return res;
 }
 
-PhysicalProperty DeriveOutputProp::visit(ReadFromMergeTree & step)
+std::optional<PhysicalProperty> DeriveOutputProp::visit(ReadFromMergeTree & step)
 {
     PhysicalProperty res;
     res.sorting.sort_description = step.getSortDescription();
@@ -158,7 +176,7 @@ PhysicalProperty DeriveOutputProp::visit(ReadFromMergeTree & step)
     return res;
 }
 
-PhysicalProperty DeriveOutputProp::visit(FilterStep & step)
+std::optional<PhysicalProperty> DeriveOutputProp::visit(FilterStep & step)
 {
     const auto & expr = step.getExpression();
     const ActionsDAG::Node * out_to_skip = nullptr;
@@ -186,7 +204,7 @@ PhysicalProperty DeriveOutputProp::visit(FilterStep & step)
     return res;
 }
 
-PhysicalProperty DeriveOutputProp::visit(TopNStep & step)
+std::optional<PhysicalProperty> DeriveOutputProp::visit(TopNStep & step)
 {
     PhysicalProperty res;
     res.distribution = child_properties[0].distribution;
@@ -195,7 +213,7 @@ PhysicalProperty DeriveOutputProp::visit(TopNStep & step)
     return res;
 }
 
-PhysicalProperty DeriveOutputProp::visit(SortingStep & step)
+std::optional<PhysicalProperty> DeriveOutputProp::visit(SortingStep & step)
 {
     PhysicalProperty res;
     res.distribution = child_properties[0].distribution;
@@ -204,7 +222,7 @@ PhysicalProperty DeriveOutputProp::visit(SortingStep & step)
     return res;
 }
 
-PhysicalProperty DeriveOutputProp::visit(ExchangeDataStep & step)
+std::optional<PhysicalProperty> DeriveOutputProp::visit(ExchangeDataStep & step)
 {
     PhysicalProperty res;
     res.distribution = step.getDistribution();
@@ -213,7 +231,7 @@ PhysicalProperty DeriveOutputProp::visit(ExchangeDataStep & step)
     return res;
 }
 
-PhysicalProperty DeriveOutputProp::visit(ExpressionStep & step)
+std::optional<PhysicalProperty> DeriveOutputProp::visit(ExpressionStep & step)
 {
     PhysicalProperty res;
 
@@ -250,7 +268,7 @@ PhysicalProperty DeriveOutputProp::visit(ExpressionStep & step)
     return res;
 }
 
-PhysicalProperty DeriveOutputProp::visit(AggregatingStep & step)
+std::optional<PhysicalProperty> DeriveOutputProp::visit(AggregatingStep & step)
 {
     PhysicalProperty res;
     res.distribution = child_properties[0].distribution;
@@ -259,7 +277,7 @@ PhysicalProperty DeriveOutputProp::visit(AggregatingStep & step)
     return res;
 }
 
-PhysicalProperty DeriveOutputProp::visit(MergingAggregatedStep & step)
+std::optional<PhysicalProperty> DeriveOutputProp::visit(MergingAggregatedStep & step)
 {
     PhysicalProperty res;
     res.distribution = child_properties[0].distribution;
@@ -268,7 +286,7 @@ PhysicalProperty DeriveOutputProp::visit(MergingAggregatedStep & step)
     return res;
 }
 
-PhysicalProperty DeriveOutputProp::visit(DistinctStep & step)
+std::optional<PhysicalProperty> DeriveOutputProp::visit(DistinctStep & step)
 {
     PhysicalProperty res;
     res.distribution = child_properties[0].distribution;

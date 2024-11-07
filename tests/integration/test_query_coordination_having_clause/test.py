@@ -74,3 +74,11 @@ def test_simple(started_cluster):
     execute_and_compare("SELECT a, sum(b) FROM t1_d GROUP BY a HAVING sum(b) > 10 ORDER BY a")
     execute_and_compare("SELECT a, sum(b) as sum_b FROM t1_d GROUP BY a HAVING sum_b > 10 ORDER BY a")
     execute_and_compare("SELECT a, sum(b) as sum_b FROM t1_d GROUP BY a HAVING sum_b - 100 > 10 ORDER BY a")
+
+
+def test_subquery(started_cluster):
+    # The filter step in having will be pushed down to the ReadFromMergeTree if query_plan_filter_push_down is on.
+    # TODO fix it by moving CreatingSetsStep to the top of the query plan
+    execute_and_compare(
+        "SELECT a, sum(b) FROM t1_d GROUP BY a HAVING a in (SELECT a FROM t1_d WHERE b < 10) ORDER BY a",
+        additional_settings="distributed_product_mode='allow', query_plan_filter_push_down=0")

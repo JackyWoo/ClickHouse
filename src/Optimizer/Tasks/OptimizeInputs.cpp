@@ -82,7 +82,7 @@ void OptimizeInputs::execute()
                 if (frame->pre_child_idx >= frame->child_idx)
                 {
                     /// child problem no solution for properties required_child_prop
-                    LOG_TRACE(
+                    LOG_ERROR(
                         log,
                         "Child group {} has no solution for required prop {}, so current node has no solution",
                         child_group.getId(),
@@ -102,7 +102,7 @@ void OptimizeInputs::execute()
                 if (child_upper_bound_cost.get() <= 0.0)
                     LOG_INFO(
                         log,
-                        "Upper bound cost of child group {} is {}, which is lower than 0, which means it will have no solution",
+                        "Upper bound cost of child group {} is {}, which is lower than 0, which means we will discard it.",
                         child_group.getId(),
                         child_upper_bound_cost.get());// TODO return;
 
@@ -138,44 +138,53 @@ void OptimizeInputs::execute()
             DeriveOutputProp output_prop_visitor(required_prop, frame->actual_children_prop, task_context->getQueryContext());
             auto output_prop = group_node->accept(output_prop_visitor);
 
-            LOG_TRACE(log, "Derived output property {}", output_prop.toString());
+            if (!output_prop.has_value())
+            {
+                LOG_TRACE(
+                    log,
+                    "Can not derive valid output property by child properties {} and required {}, discard the solution",
+                    PhysicalProperty::toString(frame->actual_children_prop),
+                    required_prop.toString());
+                break;
+            }
+            LOG_TRACE(log, "Derived output property {}", output_prop->toString());
 
             auto child_cost = frame->total_cost - frame->local_cost;
-            if (group_node->updateBestChild(output_prop, frame->actual_children_prop, child_cost))
+            if (group_node->updateBestChild(*output_prop, frame->actual_children_prop, child_cost))
             {
                 LOG_TRACE(
                     log,
                     "GroupNode update best for property {} to {}, children cost: {}",
-                    output_prop.toString(),
+                    output_prop->toString(),
                     PhysicalProperty::toString(frame->actual_children_prop),
                     child_cost.toString());
             }
 
-            if (group.updateBest(output_prop, group_node, frame->total_cost))
+            if (group.updateBest(*output_prop, group_node, frame->total_cost))
             {
                 LOG_TRACE(
                     log,
                     "Group update best node for property {} to {}, total cost: {}",
-                    output_prop.toString(),
+                    output_prop->toString(),
                     group_node->getId(),
                     frame->total_cost.toString());
             }
 
             /// Currently, it only deals with distributed cases
-            if (!output_prop.satisfySorting(required_prop))
+            if (!output_prop->satisfySorting(required_prop))
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Sort property not satisfied, output sort prop {}, required sort prop {}",
-                    output_prop.sorting.toString(),
+                    output_prop->sorting.toString(),
                     required_prop.sorting.toString());
 
-            if (!output_prop.satisfyDistribution(required_prop))
+            if (!output_prop->satisfyDistribution(required_prop))
             {
                 /// Use two-level-hash algorithm if distribution is hash and distributed_by_bucket_num is true.
                 /// TODO not all keys support two-level-hash algorithm
                 enforceTwoLevelAggIfNeed(required_prop);
                 /// Enforce exchange node
-                frame->total_cost = enforceGroupNode(required_prop, output_prop);
+                frame->total_cost = enforceGroupNode(required_prop, *output_prop);
             }
 
             /// Update group upper bound cost
@@ -261,19 +270,22 @@ Cost OptimizeInputs::enforceGroupNode(const PhysicalProperty & required_prop, co
     CostCalculator cost_calc(group.getStatistics(), task_context);
     auto cost = group_enforce_node->accept(cost_calc);
     Cost total_cost = cost + *child_cost;
-    LOG_TRACE(log, "Enforced ExchangeData {} and now total cost is {}", group_enforce_node->toString(), total_cost.toString());
+    LOG_TRACE(log, "Enforced ExchangeData {} and now total cost is {}", group_enforce_node->getId(), total_cost.toString());
 
     DeriveOutputProp output_prop_visitor(required_prop, {output_prop}, task_context->getQueryContext());
     const auto & actual_output_prop = group_enforce_node->accept(output_prop_visitor);
 
-    group_enforce_node->updateBestChild(actual_output_prop, {output_prop}, *child_cost);
-    LOG_TRACE(log, "Derived output property for enforced node {}", actual_output_prop.toString());
+    if (!actual_output_prop.has_value())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not derive valid output property for enforced node.");
 
-    group.updateBest(actual_output_prop, group_enforce_node->shared_from_this(), total_cost);
+    group_enforce_node->updateBestChild(*actual_output_prop, {output_prop}, *child_cost);
+    LOG_TRACE(log, "Derived output property for enforced node {}", actual_output_prop->toString());
+
+    group.updateBest(*actual_output_prop, group_enforce_node->shared_from_this(), total_cost);
     LOG_TRACE(
         log,
         "Enforced ExchangeData and now best plan node for {} is {}",
-        actual_output_prop.toString(),
+        actual_output_prop->toString(),
         group.tryGetBest(required_prop)->second.group_node->getId());
 
     return total_cost;

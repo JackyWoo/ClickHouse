@@ -395,7 +395,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(
 void addExpressionStep(QueryPlan & query_plan,
     ActionsAndProjectInputsFlagPtr & expression_actions,
     const std::string & step_description,
-    UsefulSets useful_sets,
+    UsefulSets & useful_sets,
     const SelectQueryOptions & select_query_options,
     const PlannerContextPtr & planner_context)
 {
@@ -422,7 +422,7 @@ void addExpressionStep(QueryPlan & query_plan,
 void addFilterStep(QueryPlan & query_plan,
     FilterAnalysisResult & filter_analysis_result,
     const std::string & step_description,
-    UsefulSets useful_sets,
+    UsefulSets & useful_sets,
     const SelectQueryOptions & select_query_options,
     const PlannerContextPtr & planner_context)
 {
@@ -630,7 +630,7 @@ void addTotalsHavingStep(QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
     const QueryNode & query_node,
-    UsefulSets useful_sets,
+    UsefulSets & useful_sets,
     const SelectQueryOptions & select_query_options)
 {
     const auto & query_context = planner_context->getQueryContext();

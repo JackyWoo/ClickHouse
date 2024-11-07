@@ -25,6 +25,10 @@ struct Distribution
     /// Used for union step.
     static Distribution deriveOutputDistribution(const Distribution & lhs, const Distribution & rhs);
 
+    /// Check whether the input distributions are valid.
+    /// e.g. Replicated and Singleton are not valid.
+    static bool checkInputDistributions(const Distribution & lhs, const Distribution & rhs);
+
     Type type;
     Names keys; /// keys for Hashed
     bool distributed_by_bucket_num = false;

@@ -82,6 +82,13 @@ Distribution Distribution::deriveOutputDistribution(const Distribution & lhs, co
     return {.type = Any};
 }
 
+bool Distribution::checkInputDistributions(const Distribution & lhs, const Distribution & rhs)
+{
+    if ((lhs.type == Singleton && rhs.type != Singleton) || (lhs.type != Singleton && rhs.type == Singleton))
+        return false;
+    return true;
+}
+
 bool PhysicalProperty::operator==(const PhysicalProperty & other) const
 {
     if (sorting.sort_description.size() != other.sorting.sort_description.size())

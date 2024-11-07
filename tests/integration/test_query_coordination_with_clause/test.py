@@ -87,9 +87,9 @@ def test_simple(started_cluster):
         SELECT count() FROM cte_numbers
         """)
 
-    # execute_and_compare("""
-    #     WITH cte_numbers AS (SELECT b FROM t1_d WHERE b > 3 LIMIT 1000)
-    #     SELECT count()
-    #     FROM t1_d
-    #     WHERE b IN (SELECT b FROM cte_numbers)
-    #     """, additional_settings="distributed_product_mode='allow'")
+    execute_and_compare("""
+        WITH cte_numbers AS (SELECT b FROM t1_d WHERE b > 3 LIMIT 1000)
+        SELECT count()
+        FROM t1_d
+        WHERE b IN (SELECT b FROM cte_numbers)
+        """, additional_settings="distributed_product_mode='allow'")

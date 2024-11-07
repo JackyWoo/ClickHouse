@@ -129,19 +129,19 @@ def test_extremes(started_cluster):
                         additional_settings="extremes=1")
 
 
-# def test_subquery(started_cluster):
-#     execute_and_compare(
-#         "select a, b, sum(c) from t1_d where b in (select b from t2_d where a like '%100%') group by a, b order by a, b limit 100",
-#         additional_settings="use_index_for_in_with_subqueries=0, distributed_product_mode='allow'")
-#
-#     execute_and_compare(
-#         "select a, b, sum(c) from t1_d where b in (select b from t2_d where a like '%100%') or b in (select b from t2_d where a like '%50%') group by a, b order by a, b limit 100",
-#         additional_settings="use_index_for_in_with_subqueries=0, distributed_product_mode='allow'")
-#
-#     execute_and_compare(
-#         "select a, b, sum(c) from t1_d where b GLOBAL in (select b from t2_d where a like '%100%') or b GLOBAL in (select b from t2_d where a like '%50%') group by a, b order by a limit 100",
-#         additional_settings="use_index_for_in_with_subqueries=0, distributed_product_mode='allow'")
-#
-#     execute_and_compare(
-#         "select a, b, sum(c) from (select * from t1_d where a='0') where b in (select b from t2_d where a like '%100%' group by a, b order by a, b limit 100",
-#         additional_settings="use_index_for_in_with_subqueries=0, distributed_product_mode='allow'")
+def test_subquery(started_cluster):
+    execute_and_compare(
+        "select a, b, sum(c) from t1_d where b in (select b from t2_d where a like '%100%') group by a, b order by a, b limit 100",
+        additional_settings="distributed_product_mode='allow'")
+
+    execute_and_compare(
+        "select a, b, sum(c) from t1_d where b in (select b from t2_d where a like '%100%') or b in (select b from t2_d where a like '%50%') group by a, b order by a, b limit 100",
+        additional_settings="distributed_product_mode='allow'")
+
+    execute_and_compare(
+        "select a, b, sum(c) from t1_d where b GLOBAL in (select b from t2_d where a like '%100%') or b GLOBAL in (select b from t2_d where a like '%50%') group by a, b order by a limit 100",
+        additional_settings="distributed_product_mode='allow'")
+
+    execute_and_compare(
+        "select a, b, sum(c) from (select * from t1_d where a='0') where b in (select b from t2_d where a like '%100%') group by a, b order by a, b limit 100",
+        additional_settings="distributed_product_mode='allow'")
