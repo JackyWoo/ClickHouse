@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 Memo::Memo(QueryPlan && plan, ContextPtr context_) : context(context_)
 {
     WriteBufferFromOwnString plan_desc;
@@ -29,7 +34,7 @@ Memo::Memo(QueryPlan && plan, ContextPtr context_) : context(context_)
 Group & Memo::buildGroup(const QueryPlan::Node & node)
 {
     std::vector<Group *> child_groups;
-    for (auto * child : node.children)
+    for (const auto * child : node.children)
     {
         auto & child_group = buildGroup(*child);
         child_groups.emplace_back(&child_group);
@@ -110,11 +115,11 @@ QueryPlan Memo::extractPlan()
 
 SubQueryPlan Memo::extractPlan(Group & group, const PhysicalProperty & required_prop)
 {
-    const auto & prop_group_node = group.tryGetBest(required_prop);
-    if (!prop_group_node.has_value())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No best node for group {}", group.getId());
+    const auto best_node = group.tryGetBest(required_prop);
+    if (!best_node.has_value())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Group {} has no best node", group.getId());
 
-    auto & group_node = *prop_group_node->second.group_node;
+    auto & group_node = *best_node->second.group_node;
     LOG_TRACE(
         log,
         "Found best node {} for group {} required property {}",
@@ -122,14 +127,20 @@ SubQueryPlan Memo::extractPlan(Group & group, const PhysicalProperty & required_
         group.getId(),
         required_prop.toString());
 
-    auto child_prop = group_node.getBestChildProperties(prop_group_node->first);
+    auto best_child_props = group_node.tryGetBest(best_node->first);
+    if (!best_child_props.has_value())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Node {} has no best children for output property {}",
+            best_node->second.group_node->getId(),
+            best_node->first.toString());
 
     std::vector<SubQueryPlanPtr> child_plans;
     const auto & children_group = group_node.getChildren();
 
-    for (size_t i = 0; i < child_prop.size(); ++i)
+    for (size_t i = 0; i < best_child_props->size(); ++i)
     {
-        SubQueryPlanPtr plan_ptr = std::make_unique<SubQueryPlan>(extractPlan(*children_group[i], child_prop[i]));
+        SubQueryPlanPtr plan_ptr = std::make_unique<SubQueryPlan>(extractPlan(*children_group[i], (*best_child_props)[i]));
         child_plans.emplace_back(std::move(plan_ptr));
     }
 
@@ -149,7 +160,7 @@ SubQueryPlan Memo::extractPlan(Group & group, const PhysicalProperty & required_
     }
 
     auto * root = plan.getRootNode();
-    root->cost = prop_group_node->second.cost;
+    root->cost = best_node->second.cost;
     root->statistics = group.getStatistics().clone();
 
     return plan;

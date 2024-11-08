@@ -100,12 +100,15 @@ std::optional<PhysicalProperty> DeriveOutputProp::visit(UnionStep & step)
         sort_scope = std::min(sort_scope, child_properties[i].sorting.sort_scope);
     }
 
-    Distribution distribution = child_properties[0].distribution;
+    std::optional distribution = child_properties[0].distribution;
     for (size_t i = 1; i < step.getInputHeaders().size(); ++i)
-        distribution = Distribution::deriveOutputDistribution(distribution, child_properties[i].distribution);
-
+    {
+        distribution = Distribution::deriveOutputDistribution(*distribution, child_properties[i].distribution);
+        if (!distribution)
+            return {};
+    }
     PhysicalProperty res;
-    res.distribution = distribution;
+    res.distribution = *distribution;
     res.sorting = {.sort_description = std::move(common_sort_description), .sort_scope = sort_scope};
     return res;
 }
@@ -123,7 +126,7 @@ std::optional<PhysicalProperty> DeriveOutputProp::visit(ReadFromMergeTree & step
 
     if (!context->getSettingsRef()[Setting::optimize_query_coordination_sharding_key])
     {
-        res.distribution = {.type = Distribution::Any};
+        res.distribution = {.type = Distribution::Straight};
         return res;
     }
 
@@ -142,7 +145,7 @@ std::optional<PhysicalProperty> DeriveOutputProp::visit(ReadFromMergeTree & step
 
     if (sharding_key.empty())
     {
-        res.distribution = {.type = Distribution::Any};
+        res.distribution = {.type = Distribution::Straight};
         return res;
     }
 
@@ -156,7 +159,7 @@ std::optional<PhysicalProperty> DeriveOutputProp::visit(ReadFromMergeTree & step
 
     if (sharding_key_expr->getRequiredColumns().empty())
     {
-        res.distribution = {.type = Distribution::Any};
+        res.distribution = {.type = Distribution::Straight};
         return res;
     }
 
@@ -164,9 +167,9 @@ std::optional<PhysicalProperty> DeriveOutputProp::visit(ReadFromMergeTree & step
     const auto & output_names = step.getOutputHeader().getNames();
     for (const auto & key : sharding_key_expr->getRequiredColumns())
     {
-        if (std::count(output_names.begin(), output_names.end(), key) != 1)
+        if (std::count(output_names.begin(), output_names.end(), key) != 1) /// TODO fix
         {
-            res.distribution = {.type = Distribution::Any};
+            res.distribution = {.type = Distribution::Straight};
             return res;
         }
     }
@@ -189,8 +192,6 @@ std::optional<PhysicalProperty> DeriveOutputProp::visit(FilterStep & step)
                 step.getFilterColumnName(),
                 expr.dumpDAG());
     }
-
-
 
     PhysicalProperty res;
     res.sorting = child_properties[0].sorting;
@@ -257,7 +258,7 @@ std::optional<PhysicalProperty> DeriveOutputProp::visit(ExpressionStep & step)
             if (node)
                 res.distribution.keys[i] = node->result_name;
             else
-                res.distribution.type = Distribution::Any;
+                res.distribution.type = Distribution::Straight;
         }
     }
     else

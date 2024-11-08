@@ -33,7 +33,7 @@ private:
     std::list<Group> groups;
     Group * root_group;
 
-    std::unordered_set<GroupNodePtr, GroupNodeHash, GroupNodeEquals> all_group_nodes;
+    std::unordered_set<GroupNodePtr, GroupNode::HashFunction, GroupNode::EqualsFunction> all_group_nodes;
 
     ContextPtr context;
     Poco::Logger * log = &Poco::Logger::get("Memo");

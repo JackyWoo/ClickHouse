@@ -26,14 +26,12 @@ AlternativeChildProperties DeriveRequiredChildProps::visitDefault(IQueryPlanStep
     if (step.stepType() == StepType::Scan)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Engine {} not implemented with CBO optimizer, please disable it by setting allow_experimental_query_coordination to 0",
+            "CBO optimizer does not support {}, please disable it by setting allow_experimental_query_coordination to 0",
             step.getName());
 
     ChildProperties required_child_props;
     for (size_t i = 0; i < group_node->childSize(); ++i)
-    {
         required_child_props.push_back({.distribution = {.type = Distribution::Singleton}});
-    }
 
     return {required_child_props};
 }
@@ -67,7 +65,7 @@ AlternativeChildProperties DeriveRequiredChildProps::visit(AggregatingStep & ste
     else /// the first stage of two stage aggreagting
     {
         ChildProperties required_child_prop;
-        required_child_prop.push_back({.distribution = {.type = Distribution::Any}});
+        required_child_prop.push_back({.distribution = {.type = Distribution::Distributed}});
         res.emplace_back(required_child_prop);
     }
     return res;
@@ -151,7 +149,7 @@ AlternativeChildProperties DeriveRequiredChildProps::visit(TopNStep & step)
 
     /// Deriving distribution
     if (step.getPhase() == TopNStep::Phase::Preliminary)
-        required_child_prop.distribution = {.type = Distribution::Any};
+        required_child_prop.distribution = {.type = Distribution::Distributed};
     else
         required_child_prop.distribution = {.type = Distribution::Singleton};
     return {{required_child_prop}};
@@ -186,7 +184,7 @@ AlternativeChildProperties DeriveRequiredChildProps::visit(SortingStep & step)
 
     /// Deriving distribution
     if (step.getPhase() == SortingStep::Phase::Preliminary)
-        required_child_prop.distribution = {.type = Distribution::Any};
+        required_child_prop.distribution = {.type = Distribution::Distributed};
     else
         required_child_prop.distribution = {.type = Distribution::Singleton};
 
@@ -205,7 +203,7 @@ AlternativeChildProperties DeriveRequiredChildProps::visit(DistinctStep & step)
     }
 
     if (step.isPreliminary())
-        required_child_prop.distribution = {.type = Distribution::Any};
+        required_child_prop.distribution = {.type = Distribution::Distributed};
     else
         required_child_prop.distribution = {.type = Distribution::Singleton};
 
@@ -218,7 +216,7 @@ AlternativeChildProperties DeriveRequiredChildProps::visit(LimitStep & step)
     ChildProperties required_child_prop;
 
     if (step.getPhase() == LimitStep::Phase::Preliminary)
-        required_child_prop.push_back({.distribution = {.type = Distribution::Any}});
+        required_child_prop.push_back({.distribution = {.type = Distribution::Distributed}});
     else
         required_child_prop.push_back({.distribution = {.type = Distribution::Singleton}});
 
@@ -232,7 +230,7 @@ AlternativeChildProperties DeriveRequiredChildProps::visit(JoinStep & step)
 
     /// broadcast join
     ChildProperties broadcast_join_properties;
-    broadcast_join_properties.push_back({.distribution = {.type = Distribution::Any}});
+    broadcast_join_properties.push_back({.distribution = {.type = Distribution::Distributed}});
     broadcast_join_properties.push_back({.distribution = {.type = Distribution::Replicated}});
     res.emplace_back(broadcast_join_properties);
 
@@ -267,37 +265,6 @@ AlternativeChildProperties DeriveRequiredChildProps::visit(ExchangeDataStep & /*
 
 AlternativeChildProperties DeriveRequiredChildProps::visit(CreatingSetStep & /*step*/)
 {
-    /// Must be Replicated when in where:
-    ///   SELECT a, sum(b) FROM t1_d WHERE a in (SELECT a FROM t1_d WHERE b < 10)  GROUP BY a
-    ///
-    ///          CreatingSets
-    ///         /          \
-    ///  Exrepssion       CreatingSet
-    ///      |                 |
-    ///    Scan           ExchangeData(Replicated)
-    ///                        |
-    ///                    Exrepssion
-    ///                        |
-    ///                       Scan
-    ///
-    /// Must be Singleton when in having:
-    ///   SELECT a, sum(b) FROM t1_d GROUP BY a HAVING a in (SELECT a FROM t1_d WHERE b < 10) ORDER BY a
-    ///
-    ///         CreatingSets
-    ///         /           \
-    ///  Exrepssion         CreatingSet
-    ///      |                   |
-    ///  Expression          ExchangeData(Singleton)
-    ///      |                   |
-    ///  Aggregating         Exrepssion
-    ///      |                   |
-    /// ExchangeData(singleton) Scan
-    ///      |
-    ///  Expression
-    ///      |
-    ///    Scan
-    ///
-    /// The acutall output distribution depends on 'DeriveOutputProp'.
     ChildProperties replicated_child_prop;
     ChildProperties singleton_child_prop;
     replicated_child_prop.push_back({.distribution = {.type = Distribution::Replicated}});
@@ -305,52 +272,81 @@ AlternativeChildProperties DeriveRequiredChildProps::visit(CreatingSetStep & /*s
     return {replicated_child_prop, singleton_child_prop};
 }
 
-AlternativeChildProperties DeriveRequiredChildProps::visit(CreatingSetsStep & step)
+/// The first child is the main plan branch, the second is the CreatingSetStep.
+/// The required child of CreatingSetStep must be Replicated or Singleton.
+/// 1. Replicated when in where:
+///   SELECT a, sum(b) FROM t1_d WHERE a in (SELECT a FROM t1_d WHERE b < 10)  GROUP BY a
+///
+///          CreatingSets
+///         /          \
+///  Expression       CreatingSet
+///      |                 |
+///    Scan           ExchangeData(Replicated)
+///                        |
+///                    Expression
+///                        |
+///                       Scan
+///
+/// 2. Singleton when in having:
+///   SELECT a, sum(b) FROM t1_d GROUP BY a HAVING a in (SELECT a FROM t1_d WHERE b < 10) ORDER BY a
+///
+///         CreatingSets
+///         /           \
+///  Expression         CreatingSet
+///      |                   |
+///  Expression          ExchangeData(Singleton)
+///      |                   |
+///  Aggregating         Expression
+///      |                   |
+/// ExchangeData(singleton) Scan
+///      |
+///  Expression
+///      |
+///    Scan
+///
+/// Please notice that:
+/// 1. Not all of them are valid, please see the second example, only the Singleton one is valid.
+///    We discard the invalid one when calculating output property for CreatingSetsStep.
+/// 2. For the first example actually only the Singleton one is valid. The following is the query
+///    plan. The prepared set is used in the first scan step which is not in the same fragment with
+///    CreatingSets, so CreatingSets can not work properly. And the fragment of the first scan will
+///    use the prepared set before it is really prepared.
+///
+///              CreatingSets
+///               /          \
+///ExchangeData(Singleton)  CreatingSet
+///              |            |
+///          Expression    ExchangeData(Singleton)
+///              |            |
+///            Scan        Expression
+///                           |
+///                        Expression
+///                           |
+///                          Scan
+AlternativeChildProperties DeriveRequiredChildProps::visit(CreatingSetsStep & /*step*/)
 {
-    bool all_column_aligned = true;
-    const auto & header = step.getInputHeaders().front();
-    const auto & step_sort_desc = step.getSortDescription(); /// TODO update sort description in applyOrder.cpp
-    for (const auto & sort_column : step_sort_desc)
-    {
-        if (!header.has(sort_column.column_name))
-        {
-            all_column_aligned = false;
-            break;
-        }
-    }
+    ChildProperties singleton_required_props;
+    /// Ensure that CreatingSetsStep is assigned to the same fragment with the left table scan and CreatingSetStep.
+    singleton_required_props.push_back({.distribution = {.type = Distribution::Any}, .sorting = required_prop.sorting});
+    for (size_t i = 1; i < group_node->childSize(); ++i)
+        singleton_required_props.push_back({.distribution = {.type = Distribution::Singleton}});
 
-    Sorting required_sort_prop;
-    if (all_column_aligned && !step_sort_desc.empty())
-    {
-        required_sort_prop.sort_description = step_sort_desc;
-        required_sort_prop.sort_scope = Sorting::Scope::Stream;
-    }
-
-    /// The first child is the main plan branch, the second is the CreatingSetStep.
-    /// The required child of CreatingSetStep must be Replicated or Singleton.
-    /// Here we give them as alternatives but note that not all of them meet are valid.
-    /// We discard the invalid one when calculating output property of CreatingSetsStep.
-
-    ChildProperties replicated_child_prop;
-    replicated_child_prop.push_back({.distribution = {.type = Distribution::Any}, .sorting = required_sort_prop});
-    for (size_t i=0; i<step.getInputHeaders().size(); i++)
-        replicated_child_prop.push_back({.distribution = {.type = Distribution::Replicated}});
-
-    ChildProperties singleton_child_prop;
-    singleton_child_prop.push_back({.distribution = {.type = Distribution::Singleton}, .sorting = required_sort_prop});
-    for (size_t i=0; i<step.getInputHeaders().size(); i++)
-        singleton_child_prop.push_back({.distribution = {.type = Distribution::Singleton}});
-
-    return {replicated_child_prop, singleton_child_prop};
+    ChildProperties replicated_required_props;
+    /// Ensure that CreatingSetsStep is assigned to the same fragment with the left table scan and CreatingSetStep.
+    replicated_required_props.push_back({.distribution = {.type = Distribution::Any}, .sorting = required_prop.sorting});
+    for (size_t i = 1; i < group_node->childSize(); ++i)
+        replicated_required_props.push_back({.distribution = {.type = Distribution::Replicated}});
+    return {singleton_required_props, replicated_required_props};
 }
 
 AlternativeChildProperties DeriveRequiredChildProps::visit(UnionStep & step)
 {
-    ChildProperties required_child_prop;
+    ChildProperties required_child_properties;
     /// union can have more than 2 children
     for (size_t i = 0; i < step.getInputHeaders().size(); i++)
-        required_child_prop.push_back({.distribution = {.type = Distribution::Any}});
-    return {required_child_prop};
+        required_child_properties.push_back({.distribution = {.type = Distribution::Any}});
+    ChildProperties distributed_union;
+    return {required_child_properties};
 }
 
 }

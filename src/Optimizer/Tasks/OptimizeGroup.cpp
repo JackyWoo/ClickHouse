@@ -6,7 +6,7 @@
 namespace DB
 {
 
-OptimizeGroup::OptimizeGroup(TaskContextPtr task_context_) : OptimizeTask(task_context_)
+OptimizeGroup::OptimizeGroup(const TaskContextPtr & task_context_) : OptimizeTask(task_context_)
 {
 }
 

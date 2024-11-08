@@ -1,4 +1,5 @@
 #include <Optimizer/Tasks/OptimizeInputs.h>
+#include "Processors/Transforms/SelectByIndicesTransform.h"
 
 #include <Optimizer/Cost/CostCalculator.h>
 #include <Optimizer/DeriveOutputProp.h>
@@ -14,13 +15,17 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
 
 namespace Setting
 {
 extern const SettingsUInt64 max_block_size;
 }
 
-OptimizeInputs::OptimizeInputs(GroupNodePtr group_node_, TaskContextPtr task_context_, std::unique_ptr<Frame> frame_)
+OptimizeInputs::OptimizeInputs(const GroupNodePtr & group_node_, const TaskContextPtr & task_context_, std::unique_ptr<Frame> frame_)
     : OptimizeTask(task_context_), group_node(group_node_), frame(std::move(frame_))
 {
     const auto & group = task_context->getCurrentGroup();
@@ -49,7 +54,7 @@ void OptimizeInputs::execute()
     /// If frame is null, means it is the first time optimize the node.
     if (!frame)
     {
-        frame = std::make_unique<Frame>(group_node, task_context->getQueryContext());
+        frame = std::make_unique<Frame>(group_node, required_prop, task_context->getQueryContext());
         LOG_TRACE(log, "Derived required child properties {}", PhysicalProperty::toString(frame->alternative_child_props));
     }
 
@@ -151,7 +156,7 @@ void OptimizeInputs::execute()
             LOG_TRACE(log, "Derived output property {}", output_prop->toString());
 
             auto child_cost = frame->total_cost - frame->local_cost;
-            if (group_node->updateBestChild(*output_prop, frame->actual_children_prop, child_cost))
+            if (group_node->updateBest(*output_prop, frame->actual_children_prop, child_cost))
             {
                 LOG_TRACE(
                     log,
@@ -171,7 +176,7 @@ void OptimizeInputs::execute()
                     frame->total_cost.toString());
             }
 
-            /// Currently, it only deals with distributed cases
+            /// Currently, it only deals with distribution cases
             if (!output_prop->satisfySorting(required_prop))
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
@@ -181,6 +186,11 @@ void OptimizeInputs::execute()
 
             if (!output_prop->satisfyDistribution(required_prop))
             {
+                if (!output_prop->canBeEnforcedTo(required_prop))
+                {
+                    frame->resetAlternativeState();
+                    continue;
+                }
                 /// Use two-level-hash algorithm if distribution is hash and distributed_by_bucket_num is true.
                 /// TODO not all keys support two-level-hash algorithm
                 enforceTwoLevelAggIfNeed(required_prop);
@@ -215,9 +225,6 @@ void OptimizeInputs::enforceTwoLevelAggIfNeed(const PhysicalProperty & required_
 Cost OptimizeInputs::enforceGroupNode(const PhysicalProperty & required_prop, const PhysicalProperty & output_prop) const
 {
     LOG_TRACE(log, "Enforcing ExchangeData required_prop: {}, output_prop {}", required_prop.toString(), output_prop.toString());
-    std::shared_ptr<ExchangeDataStep> exchange_step;
-
-    size_t max_block_size = task_context->getQueryContext()->getSettingsRef()[Setting::max_block_size];
 
     /// Because the ordering of data may be changed after adding Exchange in a distributed manner,
     /// we need to retain the order of data during exchange if there is a requirement for data sorting.
@@ -247,7 +254,8 @@ Cost OptimizeInputs::enforceGroupNode(const PhysicalProperty & required_prop, co
     {
     }
 
-    exchange_step = std::make_shared<ExchangeDataStep>(
+    size_t max_block_size = task_context->getQueryContext()->getSettingsRef()[Setting::max_block_size];
+    auto exchange_step = std::make_shared<ExchangeDataStep>(
         group_node->getStep()->getOutputHeader(),
         max_block_size,
         required_prop.distribution,
@@ -279,7 +287,7 @@ Cost OptimizeInputs::enforceGroupNode(const PhysicalProperty & required_prop, co
     if (!actual_output_prop.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not derive valid output property for enforced node.");
 
-    group_enforce_node->updateBestChild(*actual_output_prop, {output_prop}, *child_cost);
+    group_enforce_node->updateBest(*actual_output_prop, {output_prop}, *child_cost);
     LOG_TRACE(log, "Derived output property for enforced node {}", actual_output_prop->toString());
 
     group.updateBest(*actual_output_prop, group_enforce_node->shared_from_this(), total_cost);

@@ -11,14 +11,14 @@ using GroupNodePtr = std::shared_ptr<GroupNode>;
 class DeriveStats final : public OptimizeTask
 {
 public:
-    DeriveStats(GroupNodePtr group_node_, bool need_derive_child_, TaskContextPtr task_context_);
+    DeriveStats(const GroupNodePtr & group_node_, bool need_derive_child_, const TaskContextPtr & task_context_);
 
     void execute() override;
 
     String getDescription() override;
 
 private:
-    void deriveStats();
+    void deriveStats() const;
 
     OptimizeTaskPtr clone(bool need_derive_child_);
 

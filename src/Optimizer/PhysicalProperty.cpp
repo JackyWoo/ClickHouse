@@ -1,8 +1,35 @@
-#include <Optimizer/PhysicalProperty.h>
 #include <ranges>
+
+#include <Optimizer/PhysicalProperty.h>
+#include "Processors/Transforms/SelectByIndicesTransform.h"
 
 namespace DB
 {
+
+
+bool Sorting::operator==(const Sorting & other) const
+{
+    if (sort_description.size() != other.sort_description.size())
+        return false;
+    if (sort_description.size() != commonPrefix(sort_description, other.sort_description).size())
+        return false;
+    if (sort_scope != other.sort_scope)
+        return false;
+    return true;
+}
+
+bool Sorting::satisfy(const Sorting & required) const
+{
+    bool sort_description_satisfy = required.sort_description.size() == commonPrefix(sort_description, required.sort_description).size();
+
+    if (!sort_description_satisfy)
+        return false;
+
+    if (sort_scope < required.sort_scope)
+        return false;
+
+    return true;
+}
 
 String Sorting::toString() const
 {
@@ -39,6 +66,60 @@ String Sorting::toString() const
     return ret;
 }
 
+bool Distribution::satisfy(const Distribution & required) const
+{
+    if (required.type == Any)
+        return true;
+
+    if (required.type == Distributed && type != Singleton)
+        return true;
+
+    if (required.isHashed() && isHashed())
+    {
+        if (required.distributed_by_bucket_num != distributed_by_bucket_num)
+            return false;
+
+        if (required.keys.size() > keys.size())
+            return false;
+
+        for (size_t i = 0; i < required.keys.size(); i++)
+            if (required.keys[i] != keys[i])
+                return false;
+
+        return true;
+    }
+    return type == required.type;
+}
+
+bool Distribution::canBeEnforcedTo(const Distribution & required) const
+{
+    if (!isSpecified())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Try to enforce from a not specified distribution {}", toString());
+    if (satisfy(required))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No need to enforce, for distribution {} satisfies {}", toString(), required.toString());
+    if (!required.isSpecified())
+        return false;
+    return true;
+}
+
+bool Distribution::operator==(const Distribution & other) const
+{
+    if (isHashed() && other.isHashed())
+    {
+        if (other.distributed_by_bucket_num != distributed_by_bucket_num)
+            return false;
+
+        if (other.keys.size() != keys.size())
+            return false;
+
+        for (size_t i = 0; i < keys.size(); i++)
+            if (other.keys[i] != keys[i])
+                return false;
+    }
+
+    return type == other.type;
+}
+
 String Distribution::toString() const
 {
     String ret;
@@ -50,6 +131,12 @@ String Distribution::toString() const
         case Singleton:
             ret = "Singleton";
             break;
+        case Distributed:
+            ret = "Distributed";
+            break;
+        case Straight:
+            ret = "Straight";
+            break;
         case Replicated:
             ret = "Replicated";
             break;
@@ -60,10 +147,25 @@ String Distribution::toString() const
     return ret;
 }
 
-Distribution Distribution::deriveOutputDistribution(const Distribution & lhs, const Distribution & rhs)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmissing-field-initializers"
+std::optional<Distribution> Distribution::deriveOutputDistribution(const Distribution & lhs, const Distribution & rhs)
 {
+    if (!lhs.isSpecified() || !rhs.isSpecified())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "The input properties must be specified when deriving output property, but found {} and {}",
+            lhs.toString(),
+            rhs.toString());
+
+    if (!checkInputDistributions(lhs, rhs))
+        return {};
+
     if (lhs.type == Singleton && rhs.type == Singleton)
-        return {.type = Singleton};
+        return Distribution{Singleton};
+
+    if (lhs.type == Replicated && rhs.type == Replicated)
+        return Distribution{Replicated};
 
     if (lhs.type == Hashed && rhs.type == Hashed)
     {
@@ -71,16 +173,19 @@ Distribution Distribution::deriveOutputDistribution(const Distribution & lhs, co
         {
             if (lhs.keys.size() == rhs.keys.size())
             {
-                for (const auto & key : lhs.keys)
-                    if (std::find(rhs.keys.cbegin(), rhs.keys.cend(), key) == rhs.keys.cend())
-                        break;
-                return rhs;
+                for (size_t i = 0; i < lhs.keys.size(); i++)
+                {
+                    if (lhs.keys[i] != rhs.keys[i])
+                        return Distribution{Straight};
+                }
+                return lhs;
             }
         }
     }
 
-    return {.type = Any};
+    return Distribution{Straight};
 }
+#pragma clang diagnostic pop
 
 bool Distribution::checkInputDistributions(const Distribution & lhs, const Distribution & rhs)
 {
@@ -91,26 +196,21 @@ bool Distribution::checkInputDistributions(const Distribution & lhs, const Distr
 
 bool PhysicalProperty::operator==(const PhysicalProperty & other) const
 {
-    if (sorting.sort_description.size() != other.sorting.sort_description.size())
-        return false;
+    return sorting == other.sorting && distribution == other.distribution;
+}
 
-    if (sorting.sort_description.size() != commonPrefix(sorting.sort_description, other.sorting.sort_description).size())
-        return false;
+size_t PhysicalProperty::HashFunction::operator()(const PhysicalProperty & property) const
+{
+    SipHash hash;
+    hash.update(property.distribution.type);
+    hash.update(property.distribution.distributed_by_bucket_num);
+    for (const auto & key : property.distribution.keys)
+        hash.update(key);
 
-    if (sorting.sort_scope != other.sorting.sort_scope)
-        return false;
-
-    if (other.distribution.keys.size() != distribution.keys.size())
-        return false;
-
-    if (other.distribution.distributed_by_bucket_num != distribution.distributed_by_bucket_num)
-        return false;
-
-    for (const auto & key : distribution.keys)
-        if (std::count(other.distribution.keys.begin(), other.distribution.keys.end(), key) != 1)
-            return false;
-
-    return distribution.type == other.distribution.type;
+    for (const auto & sort : property.sorting.sort_description)
+        hash.update(sort.dump());
+    hash.update(property.sorting.sort_scope);
+    return hash.get64();
 }
 
 bool PhysicalProperty::satisfy(const PhysicalProperty & required) const
@@ -123,33 +223,17 @@ bool PhysicalProperty::satisfy(const PhysicalProperty & required) const
 
 bool PhysicalProperty::satisfySorting(const PhysicalProperty & required) const
 {
-    bool sort_description_satisfy = required.sorting.sort_description.size()
-        == commonPrefix(sorting.sort_description, required.sorting.sort_description).size();
-
-    if (!sort_description_satisfy)
-        return false;
-
-    bool sort_scope_satisfy = sorting.sort_scope >= required.sorting.sort_scope;
-
-    if (!sort_scope_satisfy)
-        return false;
-
-    return true;
+    return sorting.satisfy(required.sorting);
 }
 
 bool PhysicalProperty::satisfyDistribution(const PhysicalProperty & required) const
 {
-    if (required.distribution.type == Distribution::Any)
-        return true;
+    return distribution.satisfy(required.distribution);
+}
 
-    if (required.distribution.distributed_by_bucket_num != distribution.distributed_by_bucket_num)
-        return false;
-
-    for (const auto & key : distribution.keys)
-        if (std::count(required.distribution.keys.begin(), required.distribution.keys.end(), key) != 1)
-            return false;
-
-    return distribution.type == required.distribution.type;
+bool PhysicalProperty::canBeEnforcedTo(const PhysicalProperty & required) const
+{
+    return distribution.canBeEnforcedTo((required.distribution));
 }
 
 String PhysicalProperty::toString() const

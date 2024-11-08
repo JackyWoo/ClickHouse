@@ -9,7 +9,11 @@ namespace DB
 class DeriveRequiredChildProps : public PlanStepVisitor<AlternativeChildProperties>
 {
 public:
-    explicit DeriveRequiredChildProps(GroupNodePtr group_node_, ContextPtr context_) : group_node(group_node_), context(context_) { }
+    explicit DeriveRequiredChildProps(
+        const GroupNodePtr & group_node_, const PhysicalProperty & required_prop_, const ContextPtr & context_)
+        : group_node(group_node_), required_prop(required_prop_), context(context_)
+    {
+    }
 
     using Base = PlanStepVisitor<AlternativeChildProperties>;
 
@@ -47,6 +51,8 @@ public:
 
 private:
     GroupNodePtr group_node;
+    /// required properties for group_node
+    PhysicalProperty required_prop;
     ContextPtr context;
 };
 

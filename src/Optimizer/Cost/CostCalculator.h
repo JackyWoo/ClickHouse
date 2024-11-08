@@ -62,6 +62,8 @@ public:
 
     Cost visit(ExchangeDataStep & step) override;
 
+    Cost visit(CreatingSetsStep & step) override;
+
     Cost visit(CreatingSetStep & step) override;
 
     Cost visit(ExtremesStep & step) override;

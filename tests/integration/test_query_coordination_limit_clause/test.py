@@ -48,7 +48,7 @@ def started_cluster():
         )
 
         node1.query(
-            "INSERT INTO t1_d SELECT n % 5, n % 5, n % 5 FROM (SELECT number as n FROM system.numbers limit 10)")
+            "INSERT INTO t1_d SELECT n % 10, n % 10, n % 10 FROM (SELECT number as n FROM system.numbers limit 20)")
 
         node1.query("SYSTEM FLUSH DISTRIBUTED t1_d")
         node1.query("analyze table t1_d")
@@ -74,14 +74,14 @@ def test_simple(started_cluster):
     execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 0")
     execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 1")
     execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 10")
-    execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 20")
+    execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 30")
 
     execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 0, 5")
     execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 1, 5")
-    execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 1, 10")
     execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 1, 20")
-    execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 10, 10")
-    execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 10, 20")
+    execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 1, 30")
+    execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 20, 10")
+    execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 20, 20")
 
 
 def test_with_ties(started_cluster):
@@ -90,4 +90,4 @@ def test_with_ties(started_cluster):
     # The result of original ck is wrong
     # execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 1,2 WITH TIES")
     # execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 1,20 WITH TIES")
-    execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 10,2 WITH TIES")
+    execute_and_compare("SELECT * FROM t1_d ORDER BY a, b, c LIMIT 20,2 WITH TIES")

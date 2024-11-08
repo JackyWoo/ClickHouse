@@ -13,6 +13,8 @@ using ChildProperties = PhysicalProperties;
 using AlternativeChildProperties = std::vector<ChildProperties>;
 
 class Group;
+class GroupNode;
+using GroupNodePtr = std::shared_ptr<GroupNode>;
 
 class GroupNode final : public std::enable_shared_from_this<GroupNode>
 {
@@ -23,7 +25,17 @@ public:
         Cost cost;
     };
 
-    /// output(required) property -> best corresponding child properties
+    struct HashFunction
+    {
+        UInt64 operator()(const GroupNodePtr & group_node) const;
+    };
+
+    struct EqualsFunction
+    {
+        bool operator()(const GroupNodePtr & lhs, const GroupNodePtr & rhs) const;
+    };
+
+    /// output property -> best corresponding child properties
     using BestPropertiesMapping = std::unordered_map<PhysicalProperty, ChildPropertiesAndCost, PhysicalProperty::HashFunction>;
 
     GroupNode(GroupNode &&) noexcept;
@@ -40,8 +52,8 @@ public:
     Group & getGroup() const;
     void setGroup(Group * group_);
 
-    bool updateBestChild(const PhysicalProperty & property, const ChildProperties & child_properties, const Cost & child_cost);
-    const ChildProperties & getBestChildProperties(const PhysicalProperty & property);
+    bool updateBest(const PhysicalProperty & property, const ChildProperties & child_properties, const Cost & child_cost);
+    std::optional<const ChildProperties> tryGetBest(const PhysicalProperty & property);
 
     bool hasRequiredChildProperties() const;
     AlternativeChildProperties & getAlternativeRequiredChildProperties();
@@ -83,33 +95,6 @@ private:
     bool stats_derived;
 
     std::bitset<CostBasedOptimizerRules::RULES_SIZE> rule_masks;
-};
-
-using GroupNodePtr = std::shared_ptr<GroupNode>;
-
-struct GroupNodeHash
-{
-    std::size_t operator()(const GroupNodePtr & group_node) const
-    {
-        if (!group_node)
-            return 0;
-
-        size_t hash = 0;
-        /// TODO implement
-        //        size_t hash = s->getStep()->hash();
-        //        hash = MurmurHash3Impl64::combineHashes(hash, IntHash64Impl::apply(child_groups.size()));
-        //        for (auto child_group : child_groups)
-        //        {
-        //            hash = MurmurHash3Impl64::combineHashes(hash, child_group);
-        //        }
-        return hash;
-    }
-};
-
-struct GroupNodeEquals
-{
-    /// TODO implement
-    bool operator()(const GroupNodePtr & /*lhs*/, const GroupNodePtr & /*rhs*/) const { return false; }
 };
 
 }

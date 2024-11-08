@@ -11,7 +11,7 @@ using GroupNodePtr = std::shared_ptr<GroupNode>;
 class OptimizeNode final : public OptimizeTask
 {
 public:
-    OptimizeNode(GroupNodePtr group_node_, TaskContextPtr task_context_);
+    OptimizeNode(const GroupNodePtr & group_node_, const TaskContextPtr & task_context_);
 
     void execute() override;
 

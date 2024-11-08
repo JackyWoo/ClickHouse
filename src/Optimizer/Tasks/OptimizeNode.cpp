@@ -6,7 +6,7 @@
 namespace DB
 {
 
-OptimizeNode::OptimizeNode(GroupNodePtr group_node_, TaskContextPtr task_context_) : OptimizeTask(task_context_), group_node(group_node_)
+OptimizeNode::OptimizeNode(const GroupNodePtr & group_node_, const TaskContextPtr & task_context_) : OptimizeTask(task_context_), group_node(group_node_)
 {
 }
 

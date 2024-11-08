@@ -16,9 +16,9 @@ public:
     /// Support task recovery
     struct Frame
     {
-        Frame(GroupNodePtr node, ContextPtr context)
+        Frame(const GroupNodePtr & node, const PhysicalProperty & required_prop, const ContextPtr & context)
         {
-            DeriveRequiredChildProps visitor(node, context);
+            DeriveRequiredChildProps visitor(node, required_prop, context);
             alternative_child_props = node->accept(visitor);
 
             prop_idx = 0;
@@ -56,7 +56,7 @@ public:
         PhysicalProperties actual_children_prop;
     };
 
-    OptimizeInputs(GroupNodePtr group_node_, TaskContextPtr task_context_, std::unique_ptr<Frame> frame_ = nullptr);
+    OptimizeInputs(const GroupNodePtr & group_node_, const TaskContextPtr & task_context_, std::unique_ptr<Frame> frame_ = nullptr);
 
     void execute() override;
 

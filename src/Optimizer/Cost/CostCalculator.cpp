@@ -111,7 +111,7 @@ Cost CostCalculator::visit(SortingStep & step)
     /// Two stage sorting, second stage
     else if (step.getPhase() == SortingStep::Phase::Final)
     {
-        return Cost(cost_weight, input.getDataSize(), input.getDataSize());
+        return Cost(cost_weight, input.getDataSize());
     }
     /// Single stage sorting
     else
@@ -119,7 +119,7 @@ Cost CostCalculator::visit(SortingStep & step)
         if (cbo_settings.cbo_sorting_mode == CBOStepExecutionMode::TWO_STAGE)
             return Cost::infinite(cost_weight);
 
-        auto cpu_coefficient = log2(input.getOutputRowSize()) * weight;
+        auto cpu_coefficient = log2(input.getOutputRowSize());
         return Cost(cost_weight, cpu_coefficient * input.getDataSize(), input.getDataSize());
     }
 }
@@ -144,7 +144,7 @@ Cost CostCalculator::visit(LimitStep & step)
     /// Two stage limiting, second stage
     else if (step.getPhase() == LimitStep::Phase::Final)
     {
-        return Cost(cost_weight, input.getDataSize(), input.getDataSize());
+        return Cost(cost_weight, input.getDataSize());
     }
     /// Single stage limiting
     else
@@ -263,7 +263,13 @@ Cost CostCalculator::visit(ExchangeDataStep & step)
     /// TODO ExchangeDataStep required child distribution is any and here we do not know the real nodes count
     /// sending data simultaneously, but most time it is all shards, so we divide node_count.
     cost.dividedBy(node_count);
+    /// TODO calclate sorting
     return cost;
+}
+
+Cost CostCalculator::visit(CreatingSetsStep &)
+{
+    return Cost(cost_weight, 0);
 }
 
 Cost CostCalculator::visit(CreatingSetStep &)
@@ -316,7 +322,7 @@ Cost CostCalculator::visit(TopNStep & step)
     /// Two stage TopN, second stage
     else if (step.getPhase() == TopNStep::Phase::Final)
     {
-        return Cost(cost_weight, input.getDataSize(), input.getDataSize());
+        return Cost(cost_weight, input.getDataSize());
     }
     /// Single stage TopN
     else
@@ -324,7 +330,7 @@ Cost CostCalculator::visit(TopNStep & step)
         if (cbo_settings.cbo_topn_mode == CBOStepExecutionMode::TWO_STAGE)
             return Cost::infinite(cost_weight);
 
-        auto cpu_coefficient = log2(input.getOutputRowSize()) * weight;
+        auto cpu_coefficient = log2(input.getOutputRowSize());
         return Cost(cost_weight, cpu_coefficient * input.getDataSize(), input.getDataSize());
     }
 }

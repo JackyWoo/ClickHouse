@@ -8,7 +8,7 @@
 namespace DB
 {
 
-ApplyRule::ApplyRule(GroupNodePtr group_node_, RulePtr rule_, TaskContextPtr task_context_)
+ApplyRule::ApplyRule(const GroupNodePtr & group_node_, RulePtr rule_, const TaskContextPtr & task_context_)
     : OptimizeTask(task_context_), group_node(group_node_), rule(rule_)
 {
 }

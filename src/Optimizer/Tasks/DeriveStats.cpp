@@ -1,17 +1,17 @@
+#include <Optimizer/Tasks/DeriveStats.h>
+
 #include <Optimizer/Group.h>
 #include <Optimizer/Statistics/DeriveStatistics.h>
 #include <Optimizer/Statistics/Stats.h>
-#include <Optimizer/Tasks/DeriveStats.h>
 #include <Common/logger_useful.h>
 
 namespace DB
 {
 
-DeriveStats::DeriveStats(GroupNodePtr group_node_, bool need_derive_child_, TaskContextPtr task_context_)
+DeriveStats::DeriveStats(const GroupNodePtr & group_node_, bool need_derive_child_, const TaskContextPtr & task_context_)
     : OptimizeTask(task_context_), group_node(group_node_), need_derive_child(need_derive_child_)
 {
 }
-
 
 void DeriveStats::execute()
 {
@@ -41,7 +41,7 @@ void DeriveStats::execute()
     }
 }
 
-void DeriveStats::deriveStats()
+void DeriveStats::deriveStats() const
 {
     StatsList child_statistics;
     for (auto * child_group : group_node->getChildren())

@@ -4,6 +4,30 @@
 namespace DB
 {
 
+UInt64 GroupNode::HashFunction::operator()(const GroupNodePtr & group_node) const
+{
+    if (!group_node)
+        return 0;
+
+    /// TODO take children and step with different algo into consideration;
+    //        size_t hash = s->getStep()->hash();
+    //        hash = MurmurHash3Impl64::combineHashes(hash, IntHash64Impl::apply(child_groups.size()));
+    //        for (auto child_group : child_groups)
+    //        {
+    //            hash = MurmurHash3Impl64::combineHashes(hash, child_group);
+    //        }
+
+    SipHash hash;
+    hash.update(group_node->getStep().get());
+    return hash.get64();
+}
+
+bool GroupNode::EqualsFunction::operator()(const GroupNodePtr & lhs, const GroupNodePtr & rhs) const
+{
+    return lhs.get() == rhs.get();
+}
+
+
 GroupNode::GroupNode(QueryPlanStepPtr step_, const std::vector<Group *> & children_, bool is_enforce_node_)
     : id(0), step(std::move(step_)), group(nullptr), children(children_), is_enforce_node(is_enforce_node_), stats_derived(false)
 {
@@ -42,7 +66,7 @@ void GroupNode::setGroup(Group * group_)
     group = group_;
 }
 
-bool GroupNode::updateBestChild(const PhysicalProperty & property, const PhysicalProperties & child_properties, const Cost & child_cost)
+bool GroupNode::updateBest(const PhysicalProperty & property, const PhysicalProperties & child_properties, const Cost & child_cost)
 {
     if (!best_properties.contains(property) || child_cost < best_properties[property].cost)
     {
@@ -52,8 +76,10 @@ bool GroupNode::updateBestChild(const PhysicalProperty & property, const Physica
     return false;
 }
 
-const ChildProperties & GroupNode::getBestChildProperties(const PhysicalProperty & property)
+std::optional<const ChildProperties> GroupNode::tryGetBest(const PhysicalProperty & property)
 {
+    if (!best_properties.contains(property))
+        return {};
     return best_properties[property].child_prop;
 }
 

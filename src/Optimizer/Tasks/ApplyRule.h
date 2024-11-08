@@ -10,7 +10,7 @@ namespace DB
 class ApplyRule final : public OptimizeTask
 {
 public:
-    ApplyRule(GroupNodePtr group_node_, RulePtr rule_, TaskContextPtr task_context_);
+    ApplyRule(const GroupNodePtr & group_node_, RulePtr rule_, const TaskContextPtr & task_context_);
 
     void execute() override;
 
