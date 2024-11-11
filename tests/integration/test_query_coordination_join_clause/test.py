@@ -73,9 +73,9 @@ def started_cluster():
         )
 
         node1.query(
-            "INSERT INTO t1_d SELECT toString(n), n, n FROM (SELECT number as n FROM numbers(8))")
+            "INSERT INTO t1_d SELECT toString(n), n, n FROM (SELECT number as n FROM numbers(20))")
         node1.query(
-            "INSERT INTO t2_d SELECT toString(n), n, n FROM (SELECT number as n FROM numbers(2, 10))")
+            "INSERT INTO t2_d SELECT toString(n), n, n FROM (SELECT number as n FROM numbers(2, 20))")
 
         node1.query("SYSTEM FLUSH DISTRIBUTED t1_d")
         node1.query("SYSTEM FLUSH DISTRIBUTED t2_d")

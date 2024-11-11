@@ -138,3 +138,9 @@ def test_in_with_subquery(started_cluster):
     execute_and_compare(
         "SELECT count() FROM t1_d WHERE a='1' and b=10 and c in (select c from t2_d where b in (select b from t1_d where c > 100))",
         additional_settings="distributed_product_mode='allow'")
+
+
+def test_in_with_multiple_subqueries(started_cluster):
+    execute_and_compare(
+        "SELECT count() FROM t1_d WHERE a='1' and b in (select b from t2_d where b > 10) and c in (select c from t2_d where c > 100)",
+        additional_settings="distributed_product_mode='allow'")
