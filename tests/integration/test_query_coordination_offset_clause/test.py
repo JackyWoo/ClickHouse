@@ -49,7 +49,7 @@ def started_cluster():
 
 
         node1.query(
-            "INSERT INTO t1_d SELECT n % 5, n % 5, n % 5 FROM (SELECT number as n FROM system.numbers limit 10)")
+            "INSERT INTO t1_d SELECT n % 5, n % 5, n % 5 FROM (SELECT number as n FROM system.numbers limit 20)")
 
         node1.query("SYSTEM FLUSH DISTRIBUTED t1_d")
         node1.query("analyze table t1_d")
