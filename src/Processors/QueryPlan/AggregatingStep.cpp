@@ -38,7 +38,7 @@ namespace Setting
 {
 extern const SettingsBool distributed_aggregation_memory_efficient;
 extern const SettingsBool enable_memory_bound_merging_of_aggregation_results;
-extern const SettingsUInt64 max_threads;
+extern const SettingsMaxThreads max_threads;
 extern const SettingsUInt64 max_block_size;
 extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
 extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
