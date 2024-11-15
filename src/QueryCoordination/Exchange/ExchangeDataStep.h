@@ -31,6 +31,7 @@ public:
     StepType stepType() const override { return StepType::Exchange; }
 
     void initializePipeline(QueryPipelineBuilder & /*pipeline*/, const BuildQueryPipelineSettings & /*settings*/) override;
+    void describePipeline(FormatSettings & settings) const override;
 
     void mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, UInt64 limit_);
 
@@ -58,7 +59,7 @@ private:
 
     Distribution distribution;
 
-    /// Output sorting of mine
+    /// Output sorting of me
     Sorting sorting;
 
     bool sink_merge;

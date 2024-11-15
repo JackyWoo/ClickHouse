@@ -20,7 +20,8 @@ Pipelines fragmentsToPipelines(
     const std::vector<FragmentRequest> & plan_fragment_requests,
     const String & query_id,
     const Settings & settings,
-    ClusterPtr cluster);
+    const ClusterPtr & cluster,
+    bool only_analyze = false);
 
 
 };

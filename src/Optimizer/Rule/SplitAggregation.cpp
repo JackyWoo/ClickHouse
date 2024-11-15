@@ -3,9 +3,11 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
+
 
 SplitAggregation::SplitAggregation(size_t id_) : Rule(id_)
 {

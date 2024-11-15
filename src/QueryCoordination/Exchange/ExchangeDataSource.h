@@ -48,7 +48,7 @@ public:
     }
 
     Status prepare() override;
-    String getName() const override { return "ExchangeData"; }
+    String getName() const override { return "ExchangeDataSource"; }
 
     void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr /*counter*/) override { }
     void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & storage_limits_) override;

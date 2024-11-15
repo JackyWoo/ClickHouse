@@ -21,7 +21,7 @@ public:
     {
     }
 
-    Pipelines build();
+    Pipelines build(bool only_analyze = false);
 
 private:
     Poco::Logger * log;

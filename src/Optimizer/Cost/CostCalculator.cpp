@@ -308,7 +308,7 @@ Cost CostCalculator::visit(TopNStep & step)
     /// Two stage TopN, first stage
     if (step.getPhase() == TopNStep::Phase::Preliminary)
     {
-        if (cbo_settings.cbo_topn_mode == CBOStepExecutionMode::ONE_STAGE)
+        if (cbo_settings.cbo_topn_mode == CBOStepExecutionMode::ONE_STAGE) // TODO move to the second stage
             return Cost::infinite(cost_weight);
 
         /// cpu_cost

@@ -377,6 +377,7 @@ DECLARE_SETTING_ENUM(CBOStepExecutionMode)
 
 enum class CBOJoinDistributionMode : uint8_t
 {
+    SINGLETON,
     REPLICATED,
     HASHED,
     DETERMINED_BY_OPTIMIZER

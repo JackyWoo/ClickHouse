@@ -86,6 +86,32 @@ def test_explain(started_cluster):
     assert res == '1\n'
 
 
+def test_explain_pipeline(started_cluster):
+    # Queries with local table will not go with query_coordination(new queryPlan).
+    res = node1.query(
+        """
+        SELECT count() > 0 
+        FROM 
+            (EXPLAIN PIPELINE SELECT * FROM t1_d SETTINGS allow_experimental_query_coordination = 1) 
+        WHERE explain LIKE '%ExchangeData%'
+        """
+    )
+    print(res)
+    assert res == '0\n'
+
+    # Queries without query coordination will go with old QueryPlan
+    res = node1.query(
+        """
+        SELECT count() > 0 
+        FROM 
+            (EXPLAIN PIPELINE SELECT * FROM t1_d SETTINGS allow_experimental_query_coordination = 0) 
+        WHERE explain LIKE '%ExchangeData%'
+        """
+    )
+    print(res)
+    assert res == '0\n'
+
+
 def test_explain_fragment(started_cluster):
     # Explain plan with query coordination does not support Json format.
     assert node1.query_and_get_error(

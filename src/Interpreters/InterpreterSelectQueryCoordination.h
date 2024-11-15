@@ -16,6 +16,7 @@ public:
     BlockIO execute() override;
 
     void explain(WriteBufferFromOwnString & buf, const QueryPlan::ExplainPlanOptions & options_, bool json, bool optimize_);
+    void explainPipeline(WriteBufferFromOwnString & buf, const Fragment::ExplainFragmentPipelineOptions & options_);
     void explainFragment(WriteBufferFromOwnString & buf, const Fragment::ExplainFragmentOptions & options_);
 
     SettingsChanges disableIncompatibleSettings() const;

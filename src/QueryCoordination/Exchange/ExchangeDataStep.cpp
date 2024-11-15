@@ -29,10 +29,19 @@ void ExchangeDataStep::initializePipeline(QueryPipelineBuilder & pipeline, const
     for (const auto & processor : pipe.getProcessors())
         processor->setStorageLimits(storage_limits);
 
+    for (const auto & processor : pipe.getProcessors())
+        processors.emplace_back(processor);
+
     pipeline.init(std::move(pipe));
 
     if (source_merge && pipeline.getNumStreams() > 1)
         mergingSorted(pipeline, sorting.sort_description, 0);
+}
+
+
+void ExchangeDataStep::describePipeline(FormatSettings & settings) const
+{
+    IQueryPlanStep::describePipeline(processors, settings);
 }
 
 void ExchangeDataStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, UInt64 limit_)
@@ -50,6 +59,7 @@ void ExchangeDataStep::mergingSorted(QueryPipelineBuilder & pipeline, const Sort
             limit_,
             true);
 
+        processors.emplace_back(transform);
         pipeline.addTransform(std::move(transform));
     }
 }

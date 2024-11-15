@@ -284,6 +284,24 @@ void InterpreterSelectQueryCoordination::buildFragments()
     }
 }
 
+void InterpreterSelectQueryCoordination::explainPipeline(WriteBufferFromOwnString & buf, const Fragment::ExplainFragmentPipelineOptions & options_)
+{
+    if (!query_coordination_enabled)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "EXPLAIN PIPELINE but query coordination is not enabled.");
+
+    buildQueryPlanIfNeeded();
+    optimize();
+    buildFragments();
+
+    if (fragments.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "EXPLAIN PIPELINE but there is no fragments.");
+
+    Coordinator coordinator(fragments, context, formattedAST(query_ptr));
+    coordinator.buildPipelines();
+
+    fragments.front()->dumpPipeline(buf, options_);
+}
+
 void InterpreterSelectQueryCoordination::explainFragment(WriteBufferFromOwnString & buf, const Fragment::ExplainFragmentOptions & options_)
 {
     if (!query_coordination_enabled)
@@ -296,7 +314,7 @@ void InterpreterSelectQueryCoordination::explainFragment(WriteBufferFromOwnStrin
     if (fragments.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "EXPLAIN FRAGMENT but there is no fragments.");
 
-    fragments.front()->dump(buf, options_);
+    fragments.front()->dumpPlan(buf, options_);
 }
 
 void InterpreterSelectQueryCoordination::explain(
@@ -342,7 +360,7 @@ BlockIO InterpreterSelectQueryCoordination::execute()
     {
         buildFragments();
         WriteBufferFromOwnString fragment_plan_desc;
-        fragments.front()->dump(fragment_plan_desc, {});
+        fragments.front()->dumpPlan(fragment_plan_desc, {});
         LOG_TRACE(log, "Fragment plan {}\n", fragment_plan_desc.str());
 
 
@@ -352,12 +370,12 @@ BlockIO InterpreterSelectQueryCoordination::execute()
         /// schedule fragments
         if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
         {
-            Coordinator coord(fragments, context, formattedAST(query_ptr));
-            coord.schedulePrepareDistributedPipelines();
+            Coordinator coordinator(fragments, context, formattedAST(query_ptr));
+            coordinator.schedule();
 
             /// local already be scheduled
-            res.query_coord_state.pipelines = std::move(coord.pipelines);
-            res.query_coord_state.remote_host_connection = coord.getRemoteHostConnection();
+            res.query_coord_state.pipelines = std::move(coordinator.pipelines);
+            res.query_coord_state.remote_host_connection = coordinator.getRemoteHostConnection();
             res.pipeline = res.query_coord_state.pipelines.detachRootPipeline();
 
             /// TODO quota only use to root pipeline?

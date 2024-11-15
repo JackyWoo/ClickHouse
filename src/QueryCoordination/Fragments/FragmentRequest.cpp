@@ -72,17 +72,20 @@ String FragmentRequest::toString() const
     for (const auto & to : data_to)
         data_to_str += (to + ", ");
 
-    String data_from_str = "Data from: ";
-
-    for (const auto & [exchange_id, sources] : data_from)
+    if (!data_from.empty())
     {
-        data_from_str += ("exchange_id " + std::to_string(exchange_id)) + " from: ";
+        String data_from_str = "Data from: ";
+        for (const auto & [exchange_id, sources] : data_from)
+        {
+            data_from_str += ("exchange_id " + std::to_string(exchange_id)) + " from: ";
 
-        for (const auto & source : sources)
-            data_from_str += (source + ", ");
+            for (const auto & source : sources)
+                data_from_str += (source + ", ");
+        }
+        return fragment + data_to_str + data_from_str;
     }
 
-    return fragment + data_to_str + data_from_str;
+    return  fragment + data_to_str;
 }
 
 void FragmentsRequest::write(WriteBuffer & out) const

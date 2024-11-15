@@ -56,6 +56,12 @@ public:
         bool host = false; /// TODO implement
     };
 
+    struct ExplainFragmentPipelineOptions
+    {
+        /// Show header of output ports.
+        bool header = false;
+    };
+
     explicit Fragment(UInt32 fragment_id_, ContextMutablePtr context_);
 
     void addStep(QueryPlanStepPtr step);
@@ -68,7 +74,9 @@ public:
     Node * getRoot() const;
     const Nodes & getNodes() const;
 
-    void dump(WriteBufferFromOwnString & buffer, const ExplainFragmentOptions & settings);
+    void dumpPlan(WriteBufferFromOwnString & buffer, const ExplainFragmentOptions & options);
+    void dumpPipeline(WriteBufferFromOwnString & buffer, const ExplainFragmentPipelineOptions & options);
+
     const FragmentPtrs & getChildren() const;
 
     UInt32 getFragmentID() const;
@@ -83,13 +91,13 @@ public:
 
     QueryPipeline buildQueryPipeline(std::vector<ExchangeDataSink::Channel> & channels, const String & local_host);
 
-    void explainPipeline(WriteBuffer & buffer, bool show_header);
+    void explainPipeline(WriteBuffer & buffer, const ExplainFragmentPipelineOptions & options = {.header = false});
 
 private:
     bool isInitialized() const;
 
     Node makeNewNode(QueryPlanStepPtr step, std::vector<PlanNode *> children_ = {});
-    void explainPlan(WriteBuffer & buffer, const ExplainFragmentOptions & settings);
+    void explainPlan(WriteBuffer & buffer, const ExplainFragmentOptions & options);
 
     /// Build query pipeline for the fragment, note that it is a part of the whole distributed pipelines.
     QueryPipelineBuilderPtr buildQueryPipeline(

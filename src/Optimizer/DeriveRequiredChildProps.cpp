@@ -55,7 +55,7 @@ AlternativeChildProperties DeriveRequiredChildProps::visit(AggregatingStep & ste
         required_singleton_prop.push_back({.distribution = {.type = Distribution::Singleton}});
         res.emplace_back(required_singleton_prop);
 
-        ChildProperties required_hashed_prop; /// can not be chosen right now
+        ChildProperties required_hashed_prop;
         PhysicalProperty hashed_prop;
         hashed_prop.distribution.type = Distribution::Hashed;
         hashed_prop.distribution.keys = step.getParams().keys;

@@ -86,17 +86,17 @@ void ExchangeDataSink::consume(Chunk chunk)
             for (size_t i = 0; i < channels.size(); ++i)
                 mutable_columns[i] = block.cloneEmptyColumns();
 
-            std::vector<SipHash> siphashs(rows);
+            std::vector<SipHash> siphash(rows);
             for (size_t keys_position : keys_positions)
             {
                 const auto column = block.getColumns()[keys_position];
                 for (size_t i = 0; i < rows; ++i)
-                    column->updateHashWithValue(i, siphashs[i]);
+                    column->updateHashWithValue(i, siphash[i]);
             }
 
             for (size_t i = 0; i < rows; ++i)
             {
-                size_t which_channel = siphashs[i].get64() % channels.size();
+                size_t which_channel = siphash[i].get64() % channels.size();
 
                 auto & columns = mutable_columns[which_channel];
                 auto src_columns = block.getColumns();

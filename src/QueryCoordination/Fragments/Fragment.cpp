@@ -350,7 +350,7 @@ explainStep(const IQueryPlanStep & step, IQueryPlanStep::FormatSettings & settin
         step.describeIndexes(settings);
 }
 
-void Fragment::dump(WriteBufferFromOwnString & buffer, const ExplainFragmentOptions & settings)
+void Fragment::dumpPlan(WriteBufferFromOwnString & buffer, const ExplainFragmentOptions & options)
 {
     buffer.write('\n');
     std::string str("Fragment " + std::to_string(fragment_id));
@@ -363,10 +363,18 @@ void Fragment::dump(WriteBufferFromOwnString & buffer, const ExplainFragmentOpti
     buffer.write(str.c_str(), str.size());
     buffer.write('\n');
 
-    explainPlan(buffer, settings);
+    explainPlan(buffer, options);
 
     for (const auto & child_fragment : children)
-        child_fragment->dump(buffer, settings);
+        child_fragment->dumpPlan(buffer, options);
+}
+
+void Fragment::dumpPipeline(WriteBufferFromOwnString & buffer, const ExplainFragmentPipelineOptions & options)
+{
+    explainPipeline(buffer, options);
+    for (const auto & child_fragment : children)
+        child_fragment->dumpPipeline(buffer, options);
+
 }
 
 void Fragment::explainPlan(WriteBuffer & buffer, const ExplainFragmentOptions & options)
@@ -420,9 +428,9 @@ static void explainPipelineStep(IQueryPlanStep & step, IQueryPlanStep::FormatSet
         settings.offset += settings.indent;
 }
 
-void Fragment::explainPipeline(WriteBuffer & buffer, bool show_header)
+void Fragment::explainPipeline(WriteBuffer & buffer, const ExplainFragmentPipelineOptions & options)
 {
-    IQueryPlanStep::FormatSettings settings{.out = buffer, .write_header = show_header};
+    IQueryPlanStep::FormatSettings settings{.out = buffer, .write_header = options.header};
 
     struct Frame
     {

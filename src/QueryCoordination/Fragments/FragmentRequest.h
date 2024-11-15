@@ -2,9 +2,7 @@
 
 #include <vector>
 #include <IO/ReadHelpers.h>
-#include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
-#include <Common/typeid_cast.h>
 
 namespace DB
 {

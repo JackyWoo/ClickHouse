@@ -262,6 +262,19 @@ struct QueryPipelineSettings
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
 };
+struct FragmentPipelineSettings
+{
+    Fragment::ExplainFragmentPipelineOptions fragment_pipeline_options;
+
+    constexpr static char name[] = "FRAGMENT_PIPELINE";
+
+    std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
+    {
+            {"header", fragment_pipeline_options.header},
+    };
+
+    std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
+};
 
 template <typename Settings>
 struct ExplainSettings : public Settings
@@ -548,6 +561,12 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 QueryPlan plan;
                 ContextPtr context;
 
+                if (getContext()->getSettingsRef()[Setting::allow_experimental_query_coordination])
+                {
+                    InterpreterSelectQueryCoordination interpreter(ast.getExplainedQuery(), getContext(), options);
+                    interpreter.explainPipeline(buf, checkAndGetSettings<FragmentPipelineSettings>(ast.getSettings()).fragment_pipeline_options);
+                    break;
+                }
                 if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
                 {
                     InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), options);

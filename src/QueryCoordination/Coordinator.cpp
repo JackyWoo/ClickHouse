@@ -37,7 +37,7 @@ Coordinator::Coordinator(const FragmentPtrs & fragments_, const ContextMutablePt
     }
 }
 
-void Coordinator::schedulePrepareDistributedPipelines()
+void Coordinator::schedule()
 {
     // If the fragment has a scan step, it is scheduled according to the cluster topology
     assignFragmentToHost();
@@ -46,8 +46,15 @@ void Coordinator::schedulePrepareDistributedPipelines()
         for (auto & fragment : fragment_ids)
             LOG_DEBUG(log, "host_fragment_ids: host {}, fragment {}", host, fragment->getFragmentID());
 
+    buildLocalPipelines();
     sendFragmentsToPreparePipelines();
     sendBeginExecutePipelines();
+}
+
+void Coordinator::buildPipelines()
+{
+    assignFragmentToHost();
+    buildLocalPipelines(true);
 }
 
 PoolBase<DB::Connection>::Entry Coordinator::getConnection(const Cluster::ShardInfo & shard_info, const QualifiedTableName & table_name) const
@@ -273,13 +280,37 @@ std::unordered_map<UInt32, FragmentRequest> Coordinator::buildFragmentRequest()
 }
 
 
+void Coordinator::buildLocalPipelines(bool only_analyze)
+{
+    LOG_DEBUG(log, "Building local pipelines");
+
+    const auto & current_settings = context->getSettingsRef();
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings).getSaturated(current_settings[Setting::max_execution_time]);
+
+    ClientInfo modified_client_info = context->getClientInfo();
+    modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+
+    const std::unordered_map<UInt32, FragmentRequest> & fragment_requests = buildFragmentRequest();
+
+    FragmentsRequest fragments_request;
+    for (const auto & fragment : host_fragments[local_host])
+    {
+        const auto & [_, request] = *fragment_requests.find(fragment->getFragmentID());
+        fragments_request.fragments_request.emplace_back(request);
+    }
+
+    auto cluster = context->getClusters().find(context->getQueryCoordinationMetaInfo().cluster_name)->second;
+    pipelines = fragmentsToPipelines(
+        fragments, fragments_request.fragmentsRequest(), context->getCurrentQueryId(), context->getSettingsRef(), cluster, only_analyze);
+}
+
 void Coordinator::sendFragmentsToPreparePipelines()
 {
-    LOG_DEBUG(log, "Sending query {} to build fragments", query);
+    LOG_DEBUG(log, "Sending fragments to others to prepare pipelines.");
 
     const std::unordered_map<UInt32, FragmentRequest> & fragment_requests = buildFragmentRequest();
     for (const auto & [f_id, request] : fragment_requests)
-        LOG_DEBUG(log, "Send fragment to distributed request {}", request.toString());
+        LOG_DEBUG(log, "Fragment {} request {}", f_id, request.toString());
 
     const auto & current_settings = context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings).getSaturated(current_settings[Setting::max_execution_time]);
@@ -297,14 +328,7 @@ void Coordinator::sendFragmentsToPreparePipelines()
             fragments_request.fragments_request.emplace_back(request);
         }
 
-        if (host == local_host)
-        {
-            /// local direct to pipelines
-            auto cluster = context->getClusters().find(context->getQueryCoordinationMetaInfo().cluster_name)->second;
-            pipelines = fragmentsToPipelines(
-                fragments, fragments_request.fragmentsRequest(), context->getCurrentQueryId(), context->getSettingsRef(), cluster);
-        }
-        else
+        if (host != local_host)
         {
             host_connection[host]->sendFragments(
                 timeouts,

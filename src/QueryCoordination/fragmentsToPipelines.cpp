@@ -12,13 +12,14 @@ Pipelines fragmentsToPipelines(
     const std::vector<FragmentRequest> & plan_fragment_requests,
     const String & query_id,
     const Settings & settings,
-    ClusterPtr cluster)
+    const ClusterPtr & cluster,
+    bool only_analyze)
 {
     DistributedFragmentBuilder builder(all_fragments, plan_fragment_requests);
     const DistributedFragments & distributed_fragments = builder.build();
 
     PipelinesBuilder pipelines_builder(query_id, settings, cluster, distributed_fragments);
-    return pipelines_builder.build();
+    return pipelines_builder.build(only_analyze);
 }
 
 }

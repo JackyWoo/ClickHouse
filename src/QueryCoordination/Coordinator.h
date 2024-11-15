@@ -20,7 +20,10 @@ class Coordinator
 public:
     explicit Coordinator(const FragmentPtrs & fragments_, const ContextMutablePtr & context_, const String & query_);
 
-    void schedulePrepareDistributedPipelines();
+    void schedule();
+
+    /// build local pipelines, only used for explain pipeline
+    void buildPipelines();
 
     std::unordered_map<String, IConnectionPool::Entry> getRemoteHostConnection();
 
@@ -36,6 +39,7 @@ private:
 
     bool isUpToDate(const QualifiedTableName & table_name) const;
 
+    void buildLocalPipelines(bool only_analyze = false);
     void sendFragmentsToPreparePipelines();
     void sendBeginExecutePipelines();
 
