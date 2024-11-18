@@ -83,6 +83,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
+    extern const SettingsBool allow_experimental_query_coordination;
 }
 
 namespace MergeTreeSetting
@@ -978,14 +979,18 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
     ReadFromMergeTree::AnalysisResultPtr merge_tree_select_result_ptr,
     bool enable_parallel_reading) const
 {
-    /// If merge_tree_select_result_ptr != nullptr, we use analyzed result so parts will always be empty.
-    if (merge_tree_select_result_ptr)
+    /// disable ReadFromPreparedSource optimization for query coordination
+    if (!context->getSettingsRef()[Setting::allow_experimental_query_coordination])
     {
-        if (merge_tree_select_result_ptr->selected_marks == 0)
+        /// If merge_tree_select_result_ptr != nullptr, we use analyzed result so parts will always be empty.
+        if (merge_tree_select_result_ptr)
+        {
+            if (merge_tree_select_result_ptr->selected_marks == 0)
+                return {};
+        }
+        else if (parts.empty())
             return {};
     }
-    else if (parts.empty())
-        return {};
 
     return std::make_unique<ReadFromMergeTree>(
         std::move(parts),
