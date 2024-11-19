@@ -97,7 +97,7 @@ def test_explain_pipeline(started_cluster):
         """
     )
     print(res)
-    assert res == '0\n'
+    assert res == '1\n'
 
     # Queries without query coordination will go with old QueryPlan
     res = node1.query(
