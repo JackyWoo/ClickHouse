@@ -66,13 +66,13 @@ Pipelines PipelinesBuilder::build(bool only_analyze)
         for (const auto & node : fragment->getNodes())
         {
             const auto & data_from = distributed_fragment.getDataFrom();
-            auto it = data_from.find(node.plan_id);
+            auto it = data_from.find(node.id);
             if (it != data_from.end())
             {
                 if (auto * exchange_step = dynamic_cast<ExchangeDataStep *>(node.step.get()))
                     exchange_step->setSources(it->second);
                 else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Destination step {} is not ExchangeDataStep", node.plan_id);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Destination step {} is not ExchangeDataStep", node.id);
             }
         }
 

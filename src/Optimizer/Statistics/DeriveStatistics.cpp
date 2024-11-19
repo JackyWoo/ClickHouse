@@ -7,6 +7,8 @@
 #include <Optimizer/Statistics/Utils.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -37,11 +39,11 @@ Stats DeriveStatistics::visitDefault(IQueryPlanStep & step)
     for (const auto & output_column : output_columns)
     {
         ColumnStatsPtr output_column_stats;
-        for (size_t i = 0; i < input_statistics.size(); i++)
+        for (const auto & input_statistic : input_statistics)
         {
-            if (input_statistics[i].containsColumnStatistics(output_column))
+            if (input_statistic.containsColumnStatistics(output_column))
             {
-                output_column_stats = input_statistics[i].getColumnStatistics(output_column);
+                output_column_stats = input_statistic.getColumnStatistics(output_column);
                 break;
             }
         }
@@ -269,8 +271,7 @@ Stats DeriveStatistics::visit(AggregatingStep & step)
         selectivity = selectivity * node_count * coefficient;
     }
 
-    if (selectivity > 1.0)
-        selectivity = 1.0;
+    selectivity = std::min(selectivity, 1.0);
 
     statistics.setOutputRowSize(selectivity * input.getOutputRowSize());
 
@@ -333,11 +334,11 @@ Stats DeriveStatistics::visit(CreatingSetsStep & step)
     for (const auto & output_column : output_columns)
     {
         ColumnStatsPtr output_column_stats;
-        for (size_t i = 0; i < input_statistics.size(); i++)
+        for (const auto & input_statistic : input_statistics)
         {
-            if (input_statistics[i].containsColumnStatistics(output_column))
+            if (input_statistic.containsColumnStatistics(output_column))
             {
-                output_column_stats = input_statistics[i].getColumnStatistics(output_column);
+                output_column_stats = input_statistic.getColumnStatistics(output_column);
                 break;
             }
         }
@@ -369,8 +370,7 @@ Stats DeriveStatistics::visit(LimitStep & step)
         /// Two stage limiting, first stage
         if (step.getPhase() == LimitStep::Phase::Preliminary)
         {
-            if (length < row_count)
-                row_count = length;
+            row_count = std::min<Float64>(length, row_count);
             row_count = row_count * node_count;
         }
         /// Two stage limiting, second stage
@@ -382,8 +382,7 @@ Stats DeriveStatistics::visit(LimitStep & step)
         /// Single stage limiting
         else
         {
-            if (length < row_count)
-                row_count = length;
+            row_count = std::min<Float64>(length, row_count);
         }
     }
 

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <memory>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryCoordination/Exchange/ExchangeDataSink.h>
@@ -62,41 +61,44 @@ public:
         bool header = false;
     };
 
-    explicit Fragment(UInt32 fragment_id_, ContextMutablePtr context_);
+    explicit Fragment(const ContextMutablePtr & context_);
 
-    void addStep(QueryPlanStepPtr step);
-    void uniteFragments(QueryPlanStepPtr step, FragmentPtrs & fragments);
-
-    void setDestination(Node * dest_exchange, FragmentPtr dest_fragment);
-
+    void setId(Int32 fragment_id_);
     const Header & getOutputHeader() const;
 
     Node * getRoot() const;
+    void setRoot(Node * root_);
+
     const Nodes & getNodes() const;
+    Node * addNode(const Node & node);
+
+    UInt32 addAndFetchNodeID();
 
     void dumpPlan(WriteBufferFromOwnString & buffer, const ExplainFragmentOptions & options);
-    void dumpPipeline(WriteBufferFromOwnString & buffer, const ExplainFragmentPipelineOptions & options);
+    void dumpPipeline(WriteBufferFromOwnString & buffer, const ExplainFragmentPipelineOptions & options) const;
 
     const FragmentPtrs & getChildren() const;
+    void addChild(const FragmentPtr & child);
 
     UInt32 getFragmentID() const;
-    UInt32 getDestFragmentID() const;
 
-    /// Whether a fragment has a destination(father),
-    /// if not, means it is the root fragment.
+    /// Whether a fragment has a destination(parent), if not, means it is the root fragment.
     bool hasDestFragment() const;
+    UInt32 getDestFragmentID() const;
+    void setDestFragmentID(UInt32 dest_fragment_id_);
 
     UInt32 getDestExchangeID() const;
     const Node * getDestExchangeNode() const;
+    void setDestExchangeNode(Node * dest_exchange_node_);
+
+    void clearDestExchangeNodeChildren() const;
+
+    void assignPlanNodeID();
 
     QueryPipeline buildQueryPipeline(std::vector<ExchangeDataSink::Channel> & channels, const String & local_host);
-
-    void explainPipeline(WriteBuffer & buffer, const ExplainFragmentPipelineOptions & options = {.header = false});
+    void explainPipeline(WriteBuffer & buffer, const ExplainFragmentPipelineOptions & options = {.header = false}) const;
 
 private:
-    bool isInitialized() const;
-
-    Node makeNewNode(QueryPlanStepPtr step, std::vector<PlanNode *> children_ = {});
     void explainPlan(WriteBuffer & buffer, const ExplainFragmentOptions & options);
 
     /// Build query pipeline for the fragment, note that it is a part of the whole distributed pipelines.
@@ -104,13 +106,17 @@ private:
         const QueryPlanOptimizationSettings & optimization_settings, const BuildQueryPipelineSettings & build_pipeline_settings);
 
     UInt32 fragment_id;
-    UInt32 plan_id_counter;
+    UInt32 node_id_counter;
 
     Nodes nodes;
     Node * root;
 
+    /// parent
     Node * dest_exchange_node;
+    /// start from 1, 0 means no parent or not initialized
     UInt32 dest_fragment_id;
+
+    /// children fragments
     FragmentPtrs children;
 
     ContextMutablePtr context;

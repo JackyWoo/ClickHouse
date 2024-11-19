@@ -1,73 +1,98 @@
-#include <Interpreters/Context.h>
-#include <stack>
-#include <QueryCoordination/Exchange/ExchangeDataStep.h>
 #include <QueryCoordination/Fragments/FragmentBuilder.h>
+#include <Interpreters/Context.h>
+#include <QueryCoordination/Exchange/ExchangeDataStep.h>
 
 namespace DB
 {
 
-FragmentBuilder::FragmentBuilder(QueryPlan & plan_, ContextMutablePtr context_) : plan(plan_), context(context_)
+namespace
 {
+
+void clearExchangeNodeChildren(const FragmentPtr & fragment)
+{
+    for (auto & child : fragment->getChildren())
+        clearExchangeNodeChildren(child);
+    if (fragment->hasDestFragment())
+        fragment->clearDestExchangeNodeChildren();
+}
+
+void assignPlanNodeID(const FragmentPtr & fragment)
+{
+    for (auto & child : fragment->getChildren())
+        assignPlanNodeID(child);
+    fragment->assignPlanNodeID();
+}
+
+void buildFragmentsRelationship(const FragmentPtr & fragment, const FragmentPtr & parent)
+{
+    if (parent)
+    {
+        const auto * dest_exchange_node = fragment->getDestExchangeNode();
+        chassert(dest_exchange_node != nullptr);
+        auto * exchange_step = typeid_cast<ExchangeDataStep *>(dest_exchange_node->step.get());
+        chassert(exchange_step != nullptr);
+        exchange_step->setFragmentID(parent->getFragmentID());
+        exchange_step->setPlanNodeID(dest_exchange_node->id);
+    }
+
+    for (const auto & child : fragment->getChildren())
+        buildFragmentsRelationship(child, fragment);
+}
+
+}
+
+FragmentBuilder::FragmentBuilder(QueryPlan & plan_, const ContextMutablePtr & context_) : plan(plan_), context(context_)
+{
+}
+
+void FragmentBuilder::buildFragmentTree(const PlanNode * node, PlanNode * parent, const FragmentPtr & current_fragment, bool new_fragment_root)
+{
+    auto * added_node = current_fragment->addNode(*node);
+    added_node->children.clear();
+
+    if (parent)
+        parent->children.emplace_back(added_node);
+
+    if (typeid_cast<ExchangeDataStep *>(added_node->step.get()))
+    {
+        const auto fragment = std::make_shared<Fragment>(context);
+        fragment->setDestExchangeNode(added_node);
+        current_fragment->addChild(fragment);
+
+        for (const auto * child : node->children)
+            buildFragmentTree(child, added_node, fragment, true);
+    }
+    else
+    {
+        if (new_fragment_root)
+            current_fragment->setRoot(added_node);
+
+        for (const auto * child : node->children)
+            buildFragmentTree(child, added_node, current_fragment, false);
+    }
+}
+
+/// We hope that the fragment ID follows the pre-order traversal of the tree.
+void FragmentBuilder::assignFragmentID(const FragmentPtr & fragment)
+{
+    for (const auto & child : fragment->getChildren())
+        assignFragmentID(child);
+
+    fragment->setId(context->getFragmentID());
+
+    for (const auto & child : fragment->getChildren())
+        child->setDestFragmentID(fragment->getFragmentID());
 }
 
 FragmentPtr FragmentBuilder::build()
 {
-    struct Frame
-    {
-        PlanNode * node = {};
-        FragmentPtrs child_fragments = {};
-    };
-
-    std::stack<Frame> stack;
-    stack.push(Frame{.node = plan.getRootNode()});
-
-    FragmentPtr last_fragment;
-
-    while (!stack.empty())
-    {
-        auto & frame = stack.top();
-
-        if (last_fragment)
-        {
-            frame.child_fragments.emplace_back(std::move(last_fragment));
-            last_fragment = nullptr;
-        }
-
-        size_t next_child = frame.child_fragments.size();
-        if (next_child == frame.node->children.size())
-        {
-            if (auto * exchange_step = typeid_cast<ExchangeDataStep *>(frame.node->step.get()))
-            {
-                last_fragment = std::make_shared<Fragment>(context->getFragmentID(), context);
-                last_fragment->addStep(std::move(frame.node->step));
-
-                exchange_step->setFragmentId(last_fragment->getFragmentID());
-                exchange_step->setPlanID(last_fragment->getRoot()->plan_id);
-                frame.child_fragments[next_child - 1]->setDestination(last_fragment->getRoot(), last_fragment);
-            }
-            else if (next_child == 0)
-            {
-                last_fragment = std::make_shared<Fragment>(context->getFragmentID(), context);
-                last_fragment->addStep(std::move(frame.node->step));
-            }
-            else if (next_child == 1)
-            {
-                frame.child_fragments[0]->addStep(std::move(frame.node->step));
-                last_fragment = frame.child_fragments[0];
-            }
-            else
-            {
-                last_fragment = std::make_shared<Fragment>(context->getFragmentID(), context);
-                last_fragment->uniteFragments(std::move(frame.node->step), frame.child_fragments);
-            }
-
-            stack.pop();
-        }
-        else
-            stack.push(Frame{.node = frame.node->children[next_child]});
-    }
-
-    return last_fragment;
+    auto root_fragment = std::make_shared<Fragment>(context);
+    buildFragmentTree(plan.getRootNode(), nullptr, root_fragment, true);
+    assignFragmentID(root_fragment);
+    clearExchangeNodeChildren(root_fragment);
+    assignPlanNodeID(root_fragment);
+    buildFragmentsRelationship(root_fragment, nullptr);
+    return root_fragment;
 }
 
 }

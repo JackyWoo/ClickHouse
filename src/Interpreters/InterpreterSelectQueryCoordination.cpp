@@ -297,7 +297,7 @@ void InterpreterSelectQueryCoordination::explainPipeline(WriteBufferFromOwnStrin
         throw Exception(ErrorCodes::LOGICAL_ERROR, "EXPLAIN PIPELINE but there is no fragments.");
 
     Coordinator coordinator(fragments, context, formattedAST(query_ptr));
-    coordinator.buildPipelines();
+    coordinator.explainPipelines();
 
     fragments.front()->dumpPipeline(buf, options_);
 }
@@ -374,7 +374,7 @@ BlockIO InterpreterSelectQueryCoordination::execute()
             coordinator.schedule();
 
             /// local already be scheduled
-            res.query_coord_state.pipelines = std::move(coordinator.pipelines);
+            res.query_coord_state.pipelines = std::move(coordinator.extractPipelines());
             res.query_coord_state.remote_host_connection = coordinator.getRemoteHostConnection();
             res.pipeline = res.query_coord_state.pipelines.detachRootPipeline();
 

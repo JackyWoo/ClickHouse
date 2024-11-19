@@ -21,26 +21,25 @@ public:
     explicit Coordinator(const FragmentPtrs & fragments_, const ContextMutablePtr & context_, const String & query_);
 
     void schedule();
+    Pipelines && extractPipelines();
 
-    /// build local pipelines, only used for explain pipeline
-    void buildPipelines();
+    /// build local pipelines, only used for explaining pipeline
+    void explainPipelines();
 
     std::unordered_map<String, IConnectionPool::Entry> getRemoteHostConnection();
-
-    Pipelines pipelines;
 
 private:
     void assignFragmentToHost();
 
     FragmentToHosts assignSourceFragment();
 
-    PoolBase<DB::Connection>::Entry getConnection(const Cluster::ShardInfo & shard_info, const QualifiedTableName & table_name) const;
-    PoolBase<DB::Connection>::Entry getConnection(const Cluster::ShardInfo & shard_info) const;
+    PoolBase<Connection>::Entry getConnection(const Cluster::ShardInfo & shard_info, const QualifiedTableName & table_name) const;
+    PoolBase<Connection>::Entry getConnection(const Cluster::ShardInfo & shard_info) const;
 
     bool isUpToDate(const QualifiedTableName & table_name) const;
 
     void buildLocalPipelines(bool only_analyze = false);
-    void sendFragmentsToPreparePipelines();
+    void sendFragments();
     void sendBeginExecutePipelines();
 
     std::unordered_map<UInt32, FragmentRequest> buildFragmentRequest();
@@ -53,6 +52,9 @@ private:
 
     HostToFragments host_fragments;
     FragmentToHosts fragment_hosts;
+
+    /// Local pipelines, every fragment will be translated to a pipeline.
+    Pipelines pipelines;
 
     // all destinations
     std::unordered_map<String, IConnectionPool::Entry> host_connection;

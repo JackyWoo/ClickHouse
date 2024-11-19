@@ -111,10 +111,10 @@ public:
     /// Tree node. Step and it's children.
     struct PlanNode
     {
+        UInt32 id;
         QueryPlanStepPtr step;
-        std::vector<PlanNode *> children = {};
 
-        UInt32 plan_id;
+        std::vector<PlanNode *> children = {};
 
         /// Just for explain statement
         Cost cost;

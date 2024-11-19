@@ -19,74 +19,14 @@ namespace Setting
 extern const SettingsUInt64 max_block_size;
 }
 
-Fragment::Fragment(UInt32 fragment_id_, ContextMutablePtr context_)
-    : fragment_id(fragment_id_), plan_id_counter(0), root(nullptr), dest_exchange_node(nullptr), dest_fragment_id(0), context(context_)
+Fragment::Fragment(const ContextMutablePtr & context_)
+    : fragment_id(0), node_id_counter(0), root(nullptr), dest_exchange_node(nullptr), dest_fragment_id(0), context(context_)
 {
 }
 
-void Fragment::addStep(QueryPlanStepPtr step)
+void Fragment::setId(Int32 fragment_id_)
 {
-    size_t num_input_streams = step->getInputHeaders().size();
-
-    if (num_input_streams == 0)
-    {
-        if (isInitialized())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot add step {} to QueryPlan because step has no inputs, but QueryPlan is already initialized",
-                step->getName());
-
-        nodes.emplace_back(makeNewNode(std::move(step)));
-        root = &nodes.back();
-        return;
-    }
-
-    if (num_input_streams == 1)
-    {
-        if (!isInitialized())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot add step {} to QueryPlan because step has input, but QueryPlan is not initialized",
-                step->getName());
-
-        const auto & root_header = root->step->getOutputHeader();
-        const auto & step_header = step->getInputHeaders().front();
-        if (!blocksHaveEqualStructure(root_header, step_header))
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot add step {} to QueryPlan because it has incompatible header with root step {} root header: {} step header: {}",
-                step->getName(),
-                root->step->getName(),
-                root_header.dumpStructure(),
-                step_header.dumpStructure());
-
-        nodes.emplace_back(makeNewNode(std::move(step), {root}));
-        root = &nodes.back();
-
-        return;
-    }
-
-    throw Exception(
-        ErrorCodes::LOGICAL_ERROR,
-        "Cannot add step {} to QueryPlan because it has {} inputs but {} input expected",
-        step->getName(),
-        num_input_streams,
-        isInitialized() ? 1 : 0);
-}
-
-bool Fragment::isInitialized() const
-{
-    return root != nullptr;
-} /// Tree is not empty
-
-
-Fragment::Node Fragment::makeNewNode(QueryPlanStepPtr step, std::vector<PlanNode *> children_)
-{
-    Node node;
-    node.step = std::move(step);
-    node.plan_id = ++plan_id_counter;
-    node.children = children_;
-    return node;
+    fragment_id = fragment_id_;
 }
 
 const Header & Fragment::getOutputHeader() const
@@ -94,77 +34,17 @@ const Header & Fragment::getOutputHeader() const
     return root->step->getOutputHeader();
 }
 
-void Fragment::uniteFragments(QueryPlanStepPtr step, FragmentPtrs & fragments)
-{
-    if (isInitialized())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unite plans because current QueryPlan is already initialized");
-
-    size_t num_inputs = step->getInputHeaders().size();
-    if (num_inputs != fragments.size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Cannot unite fFragments using {} because step has different number of inputs. Has {} plans and {} inputs",
-            step->getName(),
-            fragments.size(),
-            num_inputs);
-
-    const auto & inputs = step->getInputHeaders();
-    for (size_t i = 0; i < num_inputs; ++i)
-    {
-        const auto & step_header = inputs[i];
-        const auto & plan_header = fragments[i]->getOutputHeader();
-        if (!blocksHaveEqualStructure(step_header, plan_header))
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot unite fFragments using {} because it has incompatible header with plan {} plan header: {} step header: {}",
-                step->getName(),
-                root->step->getName(),
-                plan_header.dumpStructure(),
-                step_header.dumpStructure());
-    }
-
-    std::vector<PlanNode *> child_exchange_nodes;
-    for (auto & fragment : fragments)
-    {
-        /// reset nodes plan_id
-        for (auto & node : fragment->nodes)
-        {
-            node.plan_id = ++plan_id_counter;
-            if (auto * exchange_step = typeid_cast<ExchangeDataStep *>(node.step.get()))
-                exchange_step->setPlanID(node.plan_id);
-        }
-
-        nodes.splice(nodes.end(), std::move(fragment->nodes));
-
-        for (const auto & child_fragment : fragment->children)
-        {
-            /// update fragment_id
-            auto * exchange_step = typeid_cast<ExchangeDataStep *>(child_fragment->dest_exchange_node->step.get());
-            exchange_step->setFragmentId(fragment_id);
-
-            child_fragment->setDestination(child_fragment->dest_exchange_node, shared_from_this());
-        }
-    }
-
-    nodes.emplace_back(makeNewNode(std::move(step)));
-    root = &nodes.back();
-
-    for (const auto & fragment : fragments)
-        root->children.emplace_back(fragment->root);
-}
-
-void Fragment::setDestination(Node * dest_exchange, FragmentPtr dest_fragment)
-{
-    dest_exchange_node = dest_exchange;
-    dest_fragment_id = dest_fragment->fragment_id;
-    dest_fragment->children.emplace_back(shared_from_this());
-
-    dest_exchange->children.clear();
-}
-
 PlanNode * Fragment::getRoot() const
 {
     return root;
+}
+
+void Fragment::setRoot(Fragment::Node * root_)
+{
+    if (root)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Fragment {} already has a root {}", fragment_id, root->step->getName());
+    chassert(root_ != nullptr);
+    root = root_;
 }
 
 const FragmentPtrs & Fragment::getChildren() const
@@ -172,9 +52,25 @@ const FragmentPtrs & Fragment::getChildren() const
     return children;
 }
 
+void Fragment::addChild(const FragmentPtr & child)
+{
+    children.push_back(child);
+}
+
 const Fragment::Nodes & Fragment::getNodes() const
 {
     return nodes;
+}
+
+Fragment::Node * Fragment::addNode(const Node & node)
+{
+    nodes.push_back(node);
+    return &nodes.back();
+}
+
+UInt32 Fragment::addAndFetchNodeID()
+{
+    return ++node_id_counter;
 }
 
 UInt32 Fragment::getFragmentID() const
@@ -187,6 +83,11 @@ UInt32 Fragment::getDestFragmentID() const
     return dest_fragment_id;
 }
 
+void Fragment::setDestFragmentID(UInt32 dest_fragment_id_)
+{
+    dest_fragment_id = dest_fragment_id_;
+}
+
 bool Fragment::hasDestFragment() const
 {
     return dest_exchange_node != nullptr;
@@ -194,12 +95,61 @@ bool Fragment::hasDestFragment() const
 
 UInt32 Fragment::getDestExchangeID() const
 {
-    return dest_exchange_node->plan_id;
+    if (!dest_exchange_node)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Fragment {} does not have parent", fragment_id);
+    return dest_exchange_node->id;
 }
 
 const Fragment::Node * Fragment::getDestExchangeNode() const
 {
     return dest_exchange_node;
+}
+
+void Fragment::setDestExchangeNode(Node * dest_exchange_node_)
+{
+    dest_exchange_node = dest_exchange_node_;
+}
+
+void Fragment::clearDestExchangeNodeChildren() const
+{
+    if (dest_exchange_node)
+        dest_exchange_node->children.clear();
+}
+
+void Fragment::assignPlanNodeID()
+{
+    struct Frame
+    {
+        Node * node;
+        std::vector<Node *> children;
+    };
+
+    std::stack<Frame> stack;
+    stack.push({.node = root});
+
+    Node * last_visited_node = nullptr;
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.top();
+        if (last_visited_node)
+        {
+            frame.children.push_back(last_visited_node);
+            last_visited_node = nullptr;
+        }
+
+        if (frame.children.size() == frame.node->children.size())
+        {
+            frame.node->id = ++node_id_counter;
+            last_visited_node = frame.node;
+            stack.pop();
+        }
+        else
+        {
+            auto * next_child = frame.node->children[frame.children.size()];
+            stack.push({.node = next_child});
+        }
+    }
 }
 
 QueryPipelineBuilderPtr Fragment::buildQueryPipeline(
@@ -285,7 +235,7 @@ QueryPipeline Fragment::buildQueryPipeline(std::vector<ExchangeDataSink::Channel
             local_host,
             query_id,
             getDestFragmentID(),
-            dest_exchange_node->plan_id);
+            dest_exchange_node->id);
 
         pipeline.complete(sink);
 
@@ -369,7 +319,7 @@ void Fragment::dumpPlan(WriteBufferFromOwnString & buffer, const ExplainFragment
         child_fragment->dumpPlan(buffer, options);
 }
 
-void Fragment::dumpPipeline(WriteBufferFromOwnString & buffer, const ExplainFragmentPipelineOptions & options)
+void Fragment::dumpPipeline(WriteBufferFromOwnString & buffer, const ExplainFragmentPipelineOptions & options) const
 {
     explainPipeline(buffer, options);
     for (const auto & child_fragment : children)
@@ -428,7 +378,7 @@ static void explainPipelineStep(IQueryPlanStep & step, IQueryPlanStep::FormatSet
         settings.offset += settings.indent;
 }
 
-void Fragment::explainPipeline(WriteBuffer & buffer, const ExplainFragmentPipelineOptions & options)
+void Fragment::explainPipeline(WriteBuffer & buffer, const ExplainFragmentPipelineOptions & options) const
 {
     IQueryPlanStep::FormatSettings settings{.out = buffer, .write_header = options.header};
 

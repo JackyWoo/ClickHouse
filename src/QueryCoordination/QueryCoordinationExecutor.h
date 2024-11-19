@@ -4,11 +4,6 @@
 #include <Common/logger_useful.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 
-/// Includes 3 parts of logic
-/// main PullingAsyncPipelineExecutor::pull
-/// QueryStatusManager receive exception and progress, exception to PullingAsyncPipelineExecutor::Data
-/// local CompletedPipelinesExecutor exception report to PullingAsyncPipelineExecutor::Data
-
 namespace DB
 {
 
@@ -22,7 +17,10 @@ class PullingAsyncPipelineExecutor;
 
 using setExceptionCallback = std::function<void(std::exception_ptr exception_)>;
 
-
+/// Includes 3 parts of logic
+/// main PullingAsyncPipelineExecutor::pull
+/// QueryStatusManager receive exception and progress, exception to PullingAsyncPipelineExecutor::Data
+/// local CompletedPipelinesExecutor exception report to PullingAsyncPipelineExecutor::Data
 class QueryCoordinationExecutor
 {
 public:

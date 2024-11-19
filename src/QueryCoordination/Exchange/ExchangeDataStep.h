@@ -35,9 +35,9 @@ public:
 
     void mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, UInt64 limit_);
 
-    void setPlanID(UInt32 plan_id_) { plan_id = plan_id_; }
+    void setPlanNodeID(UInt32 plan_id_) { plan_id = plan_id_; }
     void setSources(const std::vector<String> & sources_) { sources = sources_; }
-    void setFragmentId(UInt32 fragment_id_) { fragment_id = fragment_id_; }
+    void setFragmentID(UInt32 fragment_id_) { fragment_id = fragment_id_; }
 
     Distribution::Type getDistributionType() const { return distribution.type; }
     const Distribution & getDistribution() const { return distribution; }
