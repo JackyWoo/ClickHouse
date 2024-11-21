@@ -1,6 +1,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
-#include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
+#include <QueryCoordination/Pipelines/RemoteExecutorsManager.h>
 #include <QueryPipeline/ProfileInfo.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/ConcurrentBoundedQueue.h>
@@ -16,7 +16,7 @@ namespace ErrorCodes
 extern const int SYSTEM_ERROR;
 }
 
-void RemotePipelinesManager::receiveReportFromRemoteServers(ThreadGroupPtr thread_group)
+void RemoteExecutorsManager::receiveReportFromRemoteServers(ThreadGroupPtr thread_group)
 {
     setThreadName("rcvRmtRpt");
 
@@ -52,7 +52,7 @@ void RemotePipelinesManager::receiveReportFromRemoteServers(ThreadGroupPtr threa
     }
 }
 
-void RemotePipelinesManager::processPacket(Packet & packet, ManagedNode & node)
+void RemoteExecutorsManager::processPacket(Packet & packet, ManagedNode & node) const
 {
     switch (packet.type)
     {
@@ -113,29 +113,29 @@ void RemotePipelinesManager::processPacket(Packet & packet, ManagedNode & node)
     }
 }
 
-bool RemotePipelinesManager::allFinished()
+bool RemoteExecutorsManager::allFinished() const
 {
-    for (auto & node : managed_nodes)
+    for (const auto & node : managed_nodes)
         if (!node.is_finished)
             return false;
     return true;
 }
 
 
-void RemotePipelinesManager::asyncReceiveReports()
+void RemoteExecutorsManager::asyncReceiveReports()
 {
     auto func = [this, thread_group = CurrentThread::getGroup()]() { receiveReportFromRemoteServers(thread_group); };
     receive_reporter_thread = ThreadFromGlobalPool(std::move(func));
 }
 
 
-void RemotePipelinesManager::waitFinish()
+void RemoteExecutorsManager::waitFinish()
 {
     if (!allFinished())
         finish_event.wait();
 }
 
-void RemotePipelinesManager::cancel()
+void RemoteExecutorsManager::cancel()
 {
     if (cancelled)
         return;
@@ -180,7 +180,7 @@ void RemotePipelinesManager::cancel()
 }
 
 
-RemotePipelinesManager::~RemotePipelinesManager()
+RemoteExecutorsManager::~RemoteExecutorsManager()
 {
     try
     {
@@ -188,7 +188,7 @@ RemotePipelinesManager::~RemotePipelinesManager()
     }
     catch (...)
     {
-        tryLogCurrentException("RemotePipelinesManager");
+        tryLogCurrentException("RemoteExecutorsManager");
     }
 }
 

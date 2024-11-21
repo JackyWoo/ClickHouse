@@ -5,6 +5,9 @@
 namespace DB
 {
 
+class ReadBuffer;
+class WriteBuffer;
+
 class QueryCoordinationMetaInfo
 {
 public:

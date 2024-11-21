@@ -28,9 +28,9 @@
 #include "Storages/MergeTree/RequestResponse.h"
 #include "base/types.h"
 
-#include <QueryCoordination/Fragments/FragmentRequest.h>
-#include <QueryCoordination/Pipelines/CompletedPipelinesExecutor.h>
 #include <QueryCoordination/Exchange/ExchangeDataRequest.h>
+#include <QueryCoordination/Fragments/FragmentRequest.h>
+#include <QueryCoordination/Pipelines/NonRootPipelinesExecutor.h>
 
 
 namespace CurrentMetrics

@@ -15,7 +15,7 @@ struct QueryCoordinationState
 {
     FragmentPtrs fragments;
     Pipelines pipelines;
-    std::unordered_map<String, IConnectionPool::Entry> remote_host_connection;
+    std::unordered_map<String, IConnectionPool::Entry> remote_connections;
     StorageLimitsList storage_limits;
 };
 

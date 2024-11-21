@@ -1,5 +1,5 @@
 #include <Processors/Executors/PipelineExecutor.h>
-#include <QueryCoordination/Pipelines/CompletedPipelinesExecutor.h>
+#include <QueryCoordination/Pipelines/NonRootPipelinesExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Poco/Event.h>
@@ -17,7 +17,7 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-struct CompletedPipelinesExecutor::Data
+struct NonRootPipelinesExecutor::Data
 {
     Int32 fragment_id;
     PipelineExecutorPtr executor;
@@ -37,7 +37,7 @@ struct CompletedPipelinesExecutor::Data
 };
 
 
-struct CompletedPipelinesExecutor::Datas
+struct NonRootPipelinesExecutor::Datas
 {
     std::vector<std::shared_ptr<Data>> datas;
 
@@ -52,31 +52,31 @@ struct CompletedPipelinesExecutor::Datas
             finish_event.set();
     }
 
-    bool isFinished()
+    bool isFinished() const
     {
-        for (auto & data : datas)
+        for (const auto & data : datas)
             if (!data->is_finished)
                 return false;
         return true;
     }
 
-    void cancel()
+    void cancel() const
     {
-        for (auto & data : datas)
+        for (const auto & data : datas)
             if (!data->is_finished && data->executor)
                 data->executor->cancel(); /// TODO if finished call cancel() will hang?
     }
 
-    void join()
+    void join() const
     {
-        for (auto & data : datas)
+        for (const auto & data : datas)
             if (!data->is_finished && data->thread.joinable())
                 data->thread.join();
     }
 
     size_t size() const { return datas.size(); }
 
-    void rethrowFirstExceptionIfHas()
+    void rethrowFirstExceptionIfHas() const
     {
         for (auto & data : datas)
             if (data->has_exception)
@@ -84,7 +84,7 @@ struct CompletedPipelinesExecutor::Datas
     }
 };
 
-static void threadFunction(CompletedPipelinesExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads, Poco::Logger * log)
+static void threadFunction(NonRootPipelinesExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads, Poco::Logger * log)
 {
     SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
     setThreadName("QCompPipesEx"); /// TODO bytes > 15 can be used test query cancel
@@ -110,21 +110,21 @@ static void threadFunction(CompletedPipelinesExecutor::Data & data, ThreadGroupP
     LOG_DEBUG(log, "Fragment {} finished", data.fragment_id);
 }
 
-CompletedPipelinesExecutor::CompletedPipelinesExecutor(std::vector<QueryPipeline> & pipelines_, std::vector<Int32> & fragment_ids_)
-    : log(&Poco::Logger::get("CompletedPipelinesExecutor")), pipelines(std::move(pipelines_)), fragment_ids(std::move(fragment_ids_))
+NonRootPipelinesExecutor::NonRootPipelinesExecutor(std::vector<QueryPipeline> & pipelines_, std::vector<UInt32> & fragment_ids_)
+    : pipelines(std::move(pipelines_)), fragment_ids(std::move(fragment_ids_)), log(&Poco::Logger::get("CompletedPipelinesExecutor"))
 {
     for (auto & pipeline : pipelines)
         if (!pipeline.completed())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for CompletedPipelinesExecutor must be completed");
 }
 
-void CompletedPipelinesExecutor::setCancelCallback(std::function<bool()> is_cancelled, size_t interactive_timeout_ms_)
+void NonRootPipelinesExecutor::setCancelCallback(const std::function<bool()> & cancel_callback_, size_t interactive_timeout_ms_)
 {
-    is_cancelled_callback = is_cancelled;
+    cancel_callback = cancel_callback_;
     interactive_timeout_ms = interactive_timeout_ms_;
 }
 
-void CompletedPipelinesExecutor::asyncExecute()
+void NonRootPipelinesExecutor::asyncExecute()
 {
     auto func = [this, thread_group = CurrentThread::getGroup()]
     {
@@ -150,7 +150,7 @@ void CompletedPipelinesExecutor::asyncExecute()
     datas_init.wait(); /// avoid data thread join before data thread init
 }
 
-void CompletedPipelinesExecutor::execute()
+void NonRootPipelinesExecutor::execute()
 {
     datas = std::make_unique<Datas>();
 
@@ -187,7 +187,7 @@ void CompletedPipelinesExecutor::execute()
             if (datas->finish_event.tryWait(interactive_timeout_ms))
                 break;
 
-            if (is_cancelled_callback())
+            if (cancel_callback())
             {
                 LOG_DEBUG(log, "is_cancelled_callback try cancel");
                 cancel();
@@ -202,12 +202,12 @@ void CompletedPipelinesExecutor::execute()
     datas->rethrowFirstExceptionIfHas();
 }
 
-void CompletedPipelinesExecutor::waitFinish()
+void NonRootPipelinesExecutor::waitFinish()
 {
     datas->finish_event.wait();
 }
 
-void CompletedPipelinesExecutor::cancel()
+void NonRootPipelinesExecutor::cancel()
 {
     if (cancelled)
         return;
@@ -231,7 +231,7 @@ void CompletedPipelinesExecutor::cancel()
     LOG_DEBUG(log, "cancelled");
 }
 
-CompletedPipelinesExecutor::~CompletedPipelinesExecutor()
+NonRootPipelinesExecutor::~NonRootPipelinesExecutor()
 {
     try
     {

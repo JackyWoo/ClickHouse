@@ -1,45 +1,50 @@
 #pragma once
 
 #include <QueryPipeline/QueryPipeline.h>
+#include <QueryCoordination/Pipelines/NonRootPipelinesExecutor.h>
+#include <QueryCoordination/QueryCoordinationExecutor.h>
 
 namespace DB
 {
 
-class QueryCoordinationExecutor;
-class CompletedPipelinesExecutor;
-
+/**
+ * As to the query plan for query coordination, we will get a fragment tree.
+ *
+ * To execute the fragment tree:
+ *    1. every fragment will be translated to a pipeline
+ *    2. because every server may have multiple fragments, so it will contain multiple pipelines
+ *    3. every piepline will have an executor
+ *
+ * Please note that we will detach the root pipeline to BlockIO::pipeline to reduce code changes. TODO fix it.
+ */
 class Pipelines
 {
 public:
-    struct FragmentIDPipeline
+    struct PipelineAndFragmentID
     {
-        Int32 fragment_id = 0;
+        UInt32 fragment_id = 0;
         QueryPipeline pipeline;
     };
 
-    void assignThreadNum(size_t max_threads_);
-
+    void assignThreadNum(size_t max_threads);
     QueryPipeline detachRootPipeline() { return std::move(root_pipeline.pipeline); }
 
-    std::shared_ptr<QueryCoordinationExecutor>
-    createCoordinationExecutor(QueryPipeline & pipeline, const StorageLimitsList & storage_limits_, size_t interactive_timeout_ms);
+    /// Create executor for the initial server which will contain a root executor and some non-root executors.
+    QueryCoordinationExecutorPtr
+    createCoordinationExecutor(QueryPipeline & root_pipeline_, const StorageLimitsList & storage_limits_, size_t interactive_timeout_ms);
 
-    std::shared_ptr<CompletedPipelinesExecutor> createCompletedPipelinesExecutor();
+    /// Create executor for the non-initial server which will only contain some non-root executors.
+    NonRootPipelinesExecutorPtr createNonRootPipelinesExecutor();
 
-    void addRootPipeline(Int32 fragment_id, QueryPipeline root_pipeline_)
-    {
-        root_pipeline = FragmentIDPipeline{.fragment_id = fragment_id, .pipeline = std::move(root_pipeline_)};
-    }
-
-    void addSourcesPipeline(Int32 fragment_id, QueryPipeline sources_pipeline)
-    {
-        sources_pipelines.emplace_back(FragmentIDPipeline{.fragment_id = fragment_id, .pipeline = std::move(sources_pipeline)});
-    }
+    void addRootPipeline(UInt32 fragment_id, QueryPipeline root_pipeline_);
+    void addSourcesPipeline(UInt32 fragment_id, QueryPipeline source_pipeline);
 
 private:
-    FragmentIDPipeline root_pipeline;
-    std::vector<FragmentIDPipeline> sources_pipelines;
-    size_t max_threads;
+    /// pipeline for the root fragment, will be detached
+    PipelineAndFragmentID root_pipeline;
+
+    /// pipelines which are all completed pipelines for the other fragments in one server
+    std::vector<PipelineAndFragmentID> non_root_pipelines;
 };
 
 }

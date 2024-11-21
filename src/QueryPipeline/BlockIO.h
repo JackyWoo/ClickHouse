@@ -25,7 +25,7 @@ struct BlockIO
 
     QueryPipeline pipeline;
 
-    /// for query coordination
+    /// For query coordination
     QueryCoordinationState query_coord_state;
 
     /// Callbacks for query logging could be set here.

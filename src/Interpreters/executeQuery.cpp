@@ -85,7 +85,7 @@
 
 #include <QueryCoordination/Exchange/ExchangeManager.h>
 #include <QueryCoordination/QueryCoordinationExecutor.h>
-#include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
+#include <QueryCoordination/Pipelines/RemoteExecutorsManager.h>
 
 
 namespace ProfileEvents
@@ -1764,8 +1764,8 @@ void executeQuery(
                 auto executor = streams.query_coord_state.pipelines.createCoordinationExecutor(
                     pipeline, streams.query_coord_state.storage_limits, context->getSettingsRef()[Setting::interactive_delay] / 1000);
 
-                auto remote_pipelines_manager = executor->getRemotePipelinesManager();
-                remote_pipelines_manager->setManagedNode(streams.query_coord_state.remote_host_connection);
+                auto remote_pipelines_manager = executor->getRemoteExecutorsManager();
+                remote_pipelines_manager->setManagedNode(streams.query_coord_state.remote_connections);
                 remote_pipelines_manager->setProgressCallback(progress_callback, context->getProcessListElement());
                 executor->execute();
             }

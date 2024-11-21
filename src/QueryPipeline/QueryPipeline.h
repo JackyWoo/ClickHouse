@@ -170,7 +170,7 @@ private:
     friend class RefreshTask;
     friend class QueryPipelineBuilder;
     friend class PipelineExecutors;
-    friend class CompletedPipelinesExecutor;
+    friend class NonRootPipelinesExecutor;
     friend class QueryCoordinationExecutor;
 };
 

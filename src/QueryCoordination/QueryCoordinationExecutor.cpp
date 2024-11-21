@@ -2,8 +2,8 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Formats/LazyOutputFormat.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-#include <QueryCoordination/Pipelines/CompletedPipelinesExecutor.h>
-#include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
+#include <QueryCoordination/Pipelines/NonRootPipelinesExecutor.h>
+#include <QueryCoordination/Pipelines/RemoteExecutorsManager.h>
 #include <QueryCoordination/QueryCoordinationExecutor.h>
 
 namespace DB
@@ -30,30 +30,30 @@ struct QueryCoordinationExecutor::Data
 };
 
 QueryCoordinationExecutor::QueryCoordinationExecutor(
-    std::shared_ptr<PullingAsyncPipelineExecutor> pulling_root_executor_,
-    std::shared_ptr<CompletedPipelinesExecutor> sources_pipelines_executor_,
-    std::shared_ptr<RemotePipelinesManager> remote_pipelines_manager_)
-    : log(&Poco::Logger::get("QueryCoordinationExecutor"))
-    , pulling_root_executor(pulling_root_executor_)
-    , sources_pipelines_executor(sources_pipelines_executor_)
-    , remote_pipelines_manager(remote_pipelines_manager_)
+    const std::shared_ptr<PullingAsyncPipelineExecutor> & tcp_root_executor_,
+    const NonRootPipelinesExecutorPtr & non_root_executor_,
+    const RemoteExecutorsManagerPtr & remote_executors_manager_)
+    : tcp_root_executor(tcp_root_executor_)
+    , non_root_executor(non_root_executor_)
+    , remote_executors_manager(remote_executors_manager_)
+    , log(&Poco::Logger::get("QueryCoordinationExecutor"))
 {
 }
 
 QueryCoordinationExecutor::QueryCoordinationExecutor(
-    std::shared_ptr<CompletedPipelineExecutor> completed_root_executor_,
-    std::shared_ptr<CompletedPipelinesExecutor> sources_pipelines_executor_,
-    std::shared_ptr<RemotePipelinesManager> remote_pipelines_manager_,
+    const std::shared_ptr<CompletedPipelineExecutor> & http_root_executor_,
+    const NonRootPipelinesExecutorPtr & non_root_executor_,
+    const RemoteExecutorsManagerPtr & remote_executors_manager_,
     size_t interactive_timeout_ms_)
-    : log(&Poco::Logger::get("QueryCoordinationExecutor"))
-    , completed_root_executor(completed_root_executor_)
-    , sources_pipelines_executor(sources_pipelines_executor_)
-    , remote_pipelines_manager(remote_pipelines_manager_)
+    : http_root_executor(http_root_executor_)
+    , non_root_executor(non_root_executor_)
+    , remote_executors_manager(remote_executors_manager_)
+    , log(&Poco::Logger::get("QueryCoordinationExecutor"))
 {
 
     auto cancel_callback = [this]() { return is_canceled.load(); };
-    if (completed_root_executor)
-        completed_root_executor->setCancelCallback(cancel_callback, interactive_timeout_ms_);
+    if (http_root_executor)
+        http_root_executor->setCancelCallback(cancel_callback, interactive_timeout_ms_);
 }
 
 QueryCoordinationExecutor::~QueryCoordinationExecutor()
@@ -70,8 +70,8 @@ QueryCoordinationExecutor::~QueryCoordinationExecutor()
 
 const Block & QueryCoordinationExecutor::getHeader() const
 {
-    chassert(pulling_root_executor != nullptr);
-    return pulling_root_executor->getHeader();
+    chassert(tcp_root_executor != nullptr);
+    return tcp_root_executor->getHeader();
 }
 
 
@@ -81,31 +81,31 @@ bool QueryCoordinationExecutor::pull(Block & block, uint64_t milliseconds)
     {
         auto exception_callback = [this](std::exception_ptr exception_) { setException(exception_); };
 
-        if (sources_pipelines_executor)
+        if (non_root_executor)
         {
-            sources_pipelines_executor->setExceptionCallback(exception_callback);
-            sources_pipelines_executor->asyncExecute();
+            non_root_executor->setExceptionCallback(exception_callback);
+            non_root_executor->asyncExecute();
         }
 
-        if (remote_pipelines_manager)
+        if (remote_executors_manager)
         {
-            remote_pipelines_manager->setExceptionCallback(exception_callback);
-            remote_pipelines_manager->asyncReceiveReports();
+            remote_executors_manager->setExceptionCallback(exception_callback);
+            remote_executors_manager->asyncReceiveReports();
         }
         has_begun = true;
     }
 
     rethrowExceptionIfHas();
 
-    bool is_execution_finished = !pulling_root_executor->pull(block, milliseconds);
+    bool is_execution_finished = !tcp_root_executor->pull(block, milliseconds);
 
     if (is_execution_finished)
     {
-        if (sources_pipelines_executor)
-            sources_pipelines_executor->waitFinish();
+        if (non_root_executor)
+            non_root_executor->waitFinish();
 
-        if (remote_pipelines_manager)
-            remote_pipelines_manager->waitFinish();
+        if (remote_executors_manager)
+            remote_executors_manager->waitFinish();
     }
 
     return !is_execution_finished;
@@ -116,20 +116,20 @@ void QueryCoordinationExecutor::execute()
     has_begun = true;
     auto exception_callback = [this](std::exception_ptr exception_) { setException(exception_); };
 
-    if (sources_pipelines_executor)
+    if (non_root_executor)
     {
-        sources_pipelines_executor->setExceptionCallback(exception_callback);
-        sources_pipelines_executor->asyncExecute();
+        non_root_executor->setExceptionCallback(exception_callback);
+        non_root_executor->asyncExecute();
     }
 
-    if (remote_pipelines_manager)
+    if (remote_executors_manager)
     {
-        remote_pipelines_manager->setExceptionCallback(exception_callback);
-        remote_pipelines_manager->asyncReceiveReports();
+        remote_executors_manager->setExceptionCallback(exception_callback);
+        remote_executors_manager->asyncReceiveReports();
     }
 
     rethrowExceptionIfHas();
-    completed_root_executor->execute();
+    http_root_executor->execute();
 }
 
 void QueryCoordinationExecutor::cancel()
@@ -140,8 +140,8 @@ void QueryCoordinationExecutor::cancel()
     cancelWithExceptionHandling(
         [&]()
         {
-            if (pulling_root_executor)
-                pulling_root_executor->cancel();
+            if (tcp_root_executor)
+                tcp_root_executor->cancel();
         });
 
     /// send cancel signal to completed_root_executor
@@ -154,15 +154,15 @@ void QueryCoordinationExecutor::cancel()
     cancelWithExceptionHandling(
         [&]()
         {
-            if (sources_pipelines_executor)
-                sources_pipelines_executor->cancel();
+            if (non_root_executor)
+                non_root_executor->cancel();
         });
 
     cancelWithExceptionHandling(
         [&]()
         {
-            if (remote_pipelines_manager)
-                remote_pipelines_manager->cancel();
+            if (remote_executors_manager)
+                remote_executors_manager->cancel();
         });
 
     LOG_DEBUG(log, "cancelled");
@@ -198,34 +198,34 @@ void QueryCoordinationExecutor::cancelWithExceptionHandling(CancelFunc && cancel
     }
 }
 
-Chunk QueryCoordinationExecutor::getTotals()
+Chunk QueryCoordinationExecutor::getTotals() const
 {
-    chassert(pulling_root_executor != nullptr);
-    return pulling_root_executor->getTotals();
+    chassert(tcp_root_executor != nullptr);
+    return tcp_root_executor->getTotals();
 }
 
-Chunk QueryCoordinationExecutor::getExtremes()
+Chunk QueryCoordinationExecutor::getExtremes() const
 {
-    chassert(pulling_root_executor != nullptr);
-    return pulling_root_executor->getExtremes();
+    chassert(tcp_root_executor != nullptr);
+    return tcp_root_executor->getExtremes();
 }
 
-Block QueryCoordinationExecutor::getTotalsBlock()
+Block QueryCoordinationExecutor::getTotalsBlock() const
 {
-    chassert(pulling_root_executor != nullptr);
-    return pulling_root_executor->getTotalsBlock();
+    chassert(tcp_root_executor != nullptr);
+    return tcp_root_executor->getTotalsBlock();
 }
 
-Block QueryCoordinationExecutor::getExtremesBlock()
+Block QueryCoordinationExecutor::getExtremesBlock() const
 {
-    chassert(pulling_root_executor != nullptr);
-    return pulling_root_executor->getExtremesBlock();
+    chassert(tcp_root_executor != nullptr);
+    return tcp_root_executor->getExtremesBlock();
 }
 
-ProfileInfo & QueryCoordinationExecutor::getProfileInfo()
+ProfileInfo & QueryCoordinationExecutor::getProfileInfo() const
 {
-    chassert(pulling_root_executor != nullptr);
-    return pulling_root_executor->getProfileInfo();
+    chassert(tcp_root_executor != nullptr);
+    return tcp_root_executor->getProfileInfo();
 }
 
 void QueryCoordinationExecutor::setException(std::exception_ptr exception_)

@@ -108,7 +108,6 @@ Pipelines PipelinesBuilder::build(bool only_analyze)
     }
 
     pipelines.assignThreadNum(settings[Setting::max_threads]);
-
     return pipelines;
 }
 

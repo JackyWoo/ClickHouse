@@ -14,9 +14,14 @@ using ReadProgressCallbackPtr = std::unique_ptr<ReadProgressCallback>;
 struct ProfileInfo;
 using ProfileInfoCallback = std::function<void(const ProfileInfo & info)>;
 
-using setExceptionCallback = std::function<void(std::exception_ptr exception_)>;
+using SetExceptionCallback = std::function<void(std::exception_ptr exception_)>;
 
-class RemotePipelinesManager
+
+/**
+ * Manage the query state for the non-root server. It will collect the log,
+ * exception, progress, profiles and send to the client.
+ */
+class RemoteExecutorsManager
 {
 public:
     struct ManagedNode
@@ -32,14 +37,14 @@ public:
         IConnectionPool::Entry connection;
     };
 
-    explicit RemotePipelinesManager(const StorageLimitsList & storage_limits_) : log(&Poco::Logger::get("RemotePipelinesManager"))
+    explicit RemoteExecutorsManager(const StorageLimitsList & storage_limits_) : log(&Poco::Logger::get("RemoteExecutorsManager"))
     {
         /// Remove leaf limits for remote pipelines manager.
         for (const auto & value : storage_limits_)
             storage_limits.emplace_back(StorageLimits{value.local_limits, {}});
     }
 
-    ~RemotePipelinesManager();
+    ~RemoteExecutorsManager();
 
     void setManagedNode(const std::unordered_map<String, IConnectionPool::Entry> & host_connection)
     {
@@ -51,7 +56,7 @@ public:
 
     void asyncReceiveReports();
 
-    void setExceptionCallback(setExceptionCallback exception_callback_) { exception_callback = exception_callback_; }
+    void setExceptionCallback(SetExceptionCallback exception_callback_) { exception_callback = exception_callback_; }
 
     /// Set callback for progress. It will be called on Progress packet.
     void setProgressCallback(ProgressCallback callback, QueryStatusPtr process_list_element)
@@ -65,14 +70,13 @@ public:
     void setProfileInfoCallback(ProfileInfoCallback callback) { profile_info_callback = std::move(callback); }
 
     void waitFinish();
-    bool allFinished();
+    bool allFinished() const;
 
     void cancel();
 
 private:
     void receiveReportFromRemoteServers(ThreadGroupPtr thread_group);
-
-    void processPacket(Packet & packet, ManagedNode & node);
+    void processPacket(Packet & packet, ManagedNode & node) const;
 
     Poco::Logger * log;
 
@@ -85,10 +89,12 @@ private:
 
     ThreadFromGlobalPool receive_reporter_thread;
 
-    DB::setExceptionCallback exception_callback;
+    SetExceptionCallback exception_callback;
     std::atomic_bool cancelled = false;
 
     Poco::Event finish_event{false};
 };
+
+using RemoteExecutorsManagerPtr = std::shared_ptr<RemoteExecutorsManager>;
 
 }

@@ -1,40 +1,33 @@
 #pragma once
 #include <functional>
 #include <memory>
-#include <Common/logger_useful.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <QueryCoordination/Pipelines/RemoteExecutorsManager.h>
 
 namespace DB
 {
 
-class QueryPipeline;
-class Block;
-class Chunk;
-class LazyOutputFormat;
-struct ProfileInfo;
-class RemotePipelinesManager;
 class PullingAsyncPipelineExecutor;
 
-using setExceptionCallback = std::function<void(std::exception_ptr exception_)>;
+using SetExceptionCallback = std::function<void(std::exception_ptr exception_)>;
 
-/// Includes 3 parts of logic
-/// main PullingAsyncPipelineExecutor::pull
-/// QueryStatusManager receive exception and progress, exception to PullingAsyncPipelineExecutor::Data
-/// local CompletedPipelinesExecutor exception report to PullingAsyncPipelineExecutor::Data
+/**
+ * Executor for query coordination
+ */
 class QueryCoordinationExecutor
 {
 public:
     /// For tcp handler
     QueryCoordinationExecutor(
-        std::shared_ptr<PullingAsyncPipelineExecutor> pulling_root_executor_,
-        std::shared_ptr<CompletedPipelinesExecutor> sources_pipelines_executor_,
-        std::shared_ptr<RemotePipelinesManager> remote_pipelines_manager_);
+    const std::shared_ptr<PullingAsyncPipelineExecutor> & tcp_root_executor_,
+    const NonRootPipelinesExecutorPtr & non_root_executor_,
+    const RemoteExecutorsManagerPtr & remote_executors_manager_);
 
     /// For http handler
     QueryCoordinationExecutor(
-        std::shared_ptr<CompletedPipelineExecutor> completed_root_executor_,
-        std::shared_ptr<CompletedPipelinesExecutor> sources_pipelines_executor_,
-        std::shared_ptr<RemotePipelinesManager> remote_pipelines_manager_,
+        const std::shared_ptr<CompletedPipelineExecutor> & http_root_executor_,
+        const NonRootPipelinesExecutorPtr & non_root_executor_,
+        const RemoteExecutorsManagerPtr & remote_executors_manager_,
         size_t interactive_timeout_ms_);
 
     ~QueryCoordinationExecutor();
@@ -47,9 +40,6 @@ public:
     /// You can use any pull method.
     bool pull(Block & block, uint64_t milliseconds = 0);
 
-    /// Methods return false if query is finished.
-    /// If milliseconds > 0, returns empty object and `true` after timeout exceeded. Otherwise method is blocking.
-    /// You can use any pull method.
     void execute();
 
     /// Stop execution of all processors. It is not necessary, but helps to stop execution before executor is destroyed.
@@ -59,17 +49,17 @@ public:
     void cancelReading();
 
     /// Get totals and extremes. Returns empty chunk if doesn't have any.
-    Chunk getTotals();
-    Chunk getExtremes();
+    Chunk getTotals() const;
+    Chunk getExtremes() const;
 
     /// Get totals and extremes. Returns empty chunk if doesn't have any.
-    Block getTotalsBlock();
-    Block getExtremesBlock();
+    Block getTotalsBlock() const;
+    Block getExtremesBlock() const;
 
     /// Get query profile info.
-    ProfileInfo & getProfileInfo();
+    ProfileInfo & getProfileInfo() const;
 
-    std::shared_ptr<RemotePipelinesManager> getRemotePipelinesManager() { return remote_pipelines_manager; }
+    RemoteExecutorsManagerPtr getRemoteExecutorsManager() const { return remote_executors_manager; }
 
     /// Internal executor data.
     struct Data;
@@ -81,17 +71,15 @@ private:
     void setException(std::exception_ptr exception_);
     void rethrowExceptionIfHas();
 
-    Poco::Logger * log;
-
     /// root pipeline
-    std::shared_ptr<PullingAsyncPipelineExecutor> pulling_root_executor;
-    std::shared_ptr<CompletedPipelineExecutor> completed_root_executor;
+    std::shared_ptr<PullingAsyncPipelineExecutor> tcp_root_executor;
+    std::shared_ptr<CompletedPipelineExecutor> http_root_executor;
 
-    /// other pipelines executor
-    std::shared_ptr<CompletedPipelinesExecutor> sources_pipelines_executor;
+    /// other pipelines
+    std::shared_ptr<NonRootPipelinesExecutor> non_root_executor;
 
-    /// remote pipelines manager
-    std::shared_ptr<RemotePipelinesManager> remote_pipelines_manager;
+    /// remote executors manager
+    std::shared_ptr<RemoteExecutorsManager> remote_executors_manager;
 
 
     std::mutex mutex;
@@ -100,6 +88,10 @@ private:
 
     std::atomic_bool has_begun = false;
     std::atomic_bool is_canceled = false;
+
+    Poco::Logger * log;
 };
+
+using QueryCoordinationExecutorPtr = std::shared_ptr<QueryCoordinationExecutor>;
 
 }

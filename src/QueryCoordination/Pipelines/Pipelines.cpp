@@ -1,8 +1,8 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <QueryCoordination/Pipelines/CompletedPipelinesExecutor.h>
+#include <QueryCoordination/Pipelines/NonRootPipelinesExecutor.h>
 #include <QueryCoordination/Pipelines/Pipelines.h>
-#include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
+#include <QueryCoordination/Pipelines/RemoteExecutorsManager.h>
 #include <QueryCoordination/QueryCoordinationExecutor.h>
 
 #include <algorithm>
@@ -10,13 +10,12 @@
 namespace DB
 {
 
-void Pipelines::assignThreadNum(size_t max_threads_)
+void Pipelines::assignThreadNum(size_t max_threads)
 {
-    max_threads = max_threads_;
     std::vector<Float64> threads_weight;
     Float64 total_weight = 0;
 
-    for (const auto & query_pipeline : sources_pipelines)
+    for (const auto & query_pipeline : non_root_pipelines)
     {
         Float64 weight = query_pipeline.pipeline.getProcessors().size();
         total_weight += weight;
@@ -42,55 +41,60 @@ void Pipelines::assignThreadNum(size_t max_threads_)
         {
             size_t num_threads = std::max(size_t(1), static_cast<size_t>((threads_weight[i] / total_weight) * max_threads));
             LOG_DEBUG(
-                &Poco::Logger::get("Pipelines"), "Fragment {} pipeline num_threads {}", sources_pipelines[i].fragment_id, num_threads);
-            sources_pipelines[i].pipeline.setNumThreads(num_threads);
+                &Poco::Logger::get("Pipelines"), "Fragment {} pipeline num_threads {}", non_root_pipelines[i].fragment_id, num_threads);
+            non_root_pipelines[i].pipeline.setNumThreads(num_threads);
         }
     }
 }
 
-std::shared_ptr<QueryCoordinationExecutor>
-Pipelines::createCoordinationExecutor(QueryPipeline & pipeline, const StorageLimitsList & storage_limits_, size_t interactive_timeout_ms)
+QueryCoordinationExecutorPtr
+Pipelines::createCoordinationExecutor(QueryPipeline & root_pipeline_, const StorageLimitsList & storage_limits_, size_t interactive_timeout_ms)
 {
-    std::shared_ptr<CompletedPipelinesExecutor> sources_pipelines_executor;
-    if (!sources_pipelines.empty())
-    {
-        std::vector<Int32> fragment_ids;
-        std::vector<QueryPipeline> pipelines;
-        for (auto & query_pipeline : sources_pipelines)
-        {
-            pipelines.emplace_back(std::move(query_pipeline.pipeline));
-            fragment_ids.emplace_back(query_pipeline.fragment_id);
-        }
-
-        sources_pipelines_executor = std::make_shared<CompletedPipelinesExecutor>(pipelines, fragment_ids);
-    }
-
-    auto remote_pipelines_manager = std::make_shared<RemotePipelinesManager>(storage_limits_);
-    /// TODO set nodes
-
-    if (pipeline.pulling())
-        return std::make_shared<QueryCoordinationExecutor>(
-            std::make_shared<PullingAsyncPipelineExecutor>(pipeline), sources_pipelines_executor, remote_pipelines_manager);
-    else if (pipeline.completed())
-        return std::make_shared<QueryCoordinationExecutor>(
-            std::make_shared<CompletedPipelineExecutor>(pipeline), sources_pipelines_executor, remote_pipelines_manager, interactive_timeout_ms);
-    
-    UNREACHABLE();
-}
-
-std::shared_ptr<CompletedPipelinesExecutor> Pipelines::createCompletedPipelinesExecutor()
-{
-    //    LOG_DEBUG(log, "Create pipelines executor for query {}", query_id);
-
-    std::vector<Int32> fragment_ids;
+    chassert(!non_root_pipelines.empty());
+    std::vector<UInt32> fragment_ids;
     std::vector<QueryPipeline> pipelines;
-    for (auto & query_pipeline : sources_pipelines)
+    for (auto & query_pipeline : non_root_pipelines)
     {
         pipelines.emplace_back(std::move(query_pipeline.pipeline));
         fragment_ids.emplace_back(query_pipeline.fragment_id);
     }
 
-    return std::make_shared<CompletedPipelinesExecutor>(pipelines, fragment_ids);
+    auto non_root_executor = std::make_shared<NonRootPipelinesExecutor>(pipelines, fragment_ids);
+    auto remote_pipelines_manager = std::make_shared<RemoteExecutorsManager>(storage_limits_);
+    /// TODO set nodes
+
+    if (root_pipeline_.pulling())
+        return std::make_shared<QueryCoordinationExecutor>(
+            std::make_shared<PullingAsyncPipelineExecutor>(root_pipeline_), non_root_executor, remote_pipelines_manager);
+
+    if (root_pipeline_.completed())
+        return std::make_shared<QueryCoordinationExecutor>(
+            std::make_shared<CompletedPipelineExecutor>(root_pipeline_), non_root_executor, remote_pipelines_manager, interactive_timeout_ms);
+    
+    UNREACHABLE();
+}
+
+NonRootPipelinesExecutorPtr Pipelines::createNonRootPipelinesExecutor()
+{
+    std::vector<UInt32> fragment_ids;
+    std::vector<QueryPipeline> pipelines;
+    for (auto & query_pipeline : non_root_pipelines)
+    {
+        pipelines.emplace_back(std::move(query_pipeline.pipeline));
+        fragment_ids.emplace_back(query_pipeline.fragment_id);
+    }
+
+    return std::make_shared<NonRootPipelinesExecutor>(pipelines, fragment_ids);
+}
+
+void Pipelines::addRootPipeline(UInt32 fragment_id, QueryPipeline root_pipeline_)
+{
+    root_pipeline = {.fragment_id = fragment_id, .pipeline = std::move(root_pipeline_)};
+}
+
+void Pipelines::addSourcesPipeline(UInt32 fragment_id, QueryPipeline source_pipeline)
+{
+    non_root_pipelines.emplace_back(fragment_id, std::move(source_pipeline));
 }
 
 }

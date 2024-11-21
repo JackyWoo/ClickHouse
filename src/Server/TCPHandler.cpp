@@ -63,7 +63,7 @@
 
 #include <fmt/format.h>
 
-#include <QueryCoordination/Pipelines/RemotePipelinesManager.h>
+#include <QueryCoordination/Pipelines/RemoteExecutorsManager.h>
 #include <QueryCoordination/Coordinator.h>
 #include <QueryCoordination/QueryCoordinationExecutor.h>
 #include <QueryCoordination/Exchange/ExchangeManager.h>
@@ -1132,7 +1132,7 @@ void TCPHandler::processOrdinaryQueryWithCoordination(std::function<void()> fini
     if (secondary_query_coordination)
     {
         {
-            auto completed_pipelines_executor = state.io.query_coord_state.pipelines.createCompletedPipelinesExecutor();
+            auto completed_pipelines_executor = state.io.query_coord_state.pipelines.createNonRootPipelinesExecutor();
 
             auto callback = [this]()
             {
@@ -1188,11 +1188,11 @@ void TCPHandler::processOrdinaryQueryWithCoordination(std::function<void()> fini
         std::unique_lock progress_lock(task_callback_mutex, std::defer_lock);
 
         {
-            std::shared_ptr<QueryCoordinationExecutor> executor
+            auto executor
                 = state.io.query_coord_state.pipelines.createCoordinationExecutor(pipeline, state.io.query_coord_state.storage_limits, interactive_delay / 1000);
 
-            auto remote_pipelines_manager = executor->getRemotePipelinesManager();
-            remote_pipelines_manager->setManagedNode(state.io.query_coord_state.remote_host_connection);
+            auto remote_pipelines_manager = executor->getRemoteExecutorsManager();
+            remote_pipelines_manager->setManagedNode(state.io.query_coord_state.remote_connections);
             remote_pipelines_manager->setProgressCallback(
                 [this](const Progress & value) { this->updateProgress(value); }, query_context->getProcessListElement());
 

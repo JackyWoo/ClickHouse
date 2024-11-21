@@ -5,7 +5,7 @@
 #include <QueryCoordination/Exchange/ExchangeDataSource.h>
 #include <QueryCoordination/Fragments/Fragment.h>
 #include <QueryCoordination/Fragments/FragmentRequest.h>
-#include <QueryCoordination/Pipelines/CompletedPipelinesExecutor.h>
+#include <QueryCoordination/Pipelines/NonRootPipelinesExecutor.h>
 
 namespace DB
 {

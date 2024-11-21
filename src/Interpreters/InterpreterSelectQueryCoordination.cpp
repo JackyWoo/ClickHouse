@@ -375,7 +375,7 @@ BlockIO InterpreterSelectQueryCoordination::execute()
 
             /// local already be scheduled
             res.query_coord_state.pipelines = std::move(coordinator.extractPipelines());
-            res.query_coord_state.remote_host_connection = coordinator.getRemoteHostConnection();
+            res.query_coord_state.remote_connections = coordinator.getRemoteHostConnection();
             res.pipeline = res.query_coord_state.pipelines.detachRootPipeline();
 
             /// TODO quota only use to root pipeline?
