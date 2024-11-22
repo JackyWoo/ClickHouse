@@ -111,11 +111,11 @@ static void threadFunction(NonRootPipelinesExecutor::Data & data, ThreadGroupPtr
 }
 
 NonRootPipelinesExecutor::NonRootPipelinesExecutor(std::vector<QueryPipeline> & pipelines_, std::vector<UInt32> & fragment_ids_)
-    : pipelines(std::move(pipelines_)), fragment_ids(std::move(fragment_ids_)), log(&Poco::Logger::get("CompletedPipelinesExecutor"))
+    : pipelines(std::move(pipelines_)), fragment_ids(std::move(fragment_ids_)), log(&Poco::Logger::get("NonRootPipelinesExecutor"))
 {
     for (auto & pipeline : pipelines)
         if (!pipeline.completed())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for CompletedPipelinesExecutor must be completed");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for NonRootPipelinesExecutor must be completed");
 }
 
 void NonRootPipelinesExecutor::setCancelCallback(const std::function<bool()> & cancel_callback_, size_t interactive_timeout_ms_)
@@ -239,7 +239,7 @@ NonRootPipelinesExecutor::~NonRootPipelinesExecutor()
     }
     catch (...)
     {
-        tryLogCurrentException("CompletedPipelinesExecutor");
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
 }
 

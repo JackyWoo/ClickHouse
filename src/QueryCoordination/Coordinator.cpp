@@ -326,7 +326,7 @@ void Coordinator::sendFragments()
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
 
-    /// send
+    /// send fragments
     for (const auto & [host, fragments_for_send] : host_fragments)
     {
         FragmentsRequest fragments_request;
@@ -356,19 +356,33 @@ void Coordinator::sendFragments()
     {
         if (host != local_host)
         {
-            auto package = host_connection[host]->receivePacket();
+            while (true) /// TODO receive anyway when there is a exception
+            {
+                auto packet = host_connection[host]->receivePacket();
 
-            if (package.type == Protocol::Server::Exception)
-                package.exception->rethrow();
+                if (packet.type == Protocol::Server::Exception)
+                    packet.exception->rethrow();
 
-            /// may receive Log
+                /// receive logs from remote and send it to client, used
+                /// 1. when user set send_logs_level to higher level e.g. trace or debug
+                /// 2. when remote fails to build pipeline, they will send the error log for logical exception but not exception
+                /// when we read a log we continue reading the next packet but for the 2nd case we will get an eof error. TODO fix it
+                if (packet.type == Protocol::Server::Log)
+                {
+                    if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
+                        log_queue->pushBlock(std::move(packet.block));
+                    continue;
+                }
 
-            if (package.type != Protocol::Server::PipelinesReady)
+                if (packet.type == Protocol::Server::PipelinesReady)
+                    break;
+
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Received {} but not PipelinesReady from {}",
-                    Protocol::Server::toString(package.type),
+                    Protocol::Server::toString(packet.type),
                     host);
+            }
         }
     }
 }

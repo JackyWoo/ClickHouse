@@ -303,7 +303,8 @@ private:
     /// Process a request that does not require the receiving of data blocks from the client
     void processOrdinaryQuery();
 
-    void processOrdinaryQueryWithCoordination(std::function<void()> finish_or_cancel);
+    /// for query coordination
+    void processOrdinaryQueryWithCoordination();
 
     void processTablesStatusRequest();
 

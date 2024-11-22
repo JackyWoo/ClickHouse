@@ -633,7 +633,8 @@ void TCPHandler::runImpl()
 
             if (query_context->isDistributedForQueryCoord())
             {
-                processOrdinaryQueryWithCoordination(finish_or_cancel);
+                processOrdinaryQueryWithCoordination();
+                finish_or_cancel();
             }
             else if (state.io.pipeline.pushing())
             {
@@ -1121,7 +1122,7 @@ void TCPHandler::processInsertQuery()
     sendInsertProfileEvents();
 }
 
-void TCPHandler::processOrdinaryQueryWithCoordination(std::function<void()> finish_or_cancel)
+void TCPHandler::processOrdinaryQueryWithCoordination()
 {
     bool initial_query_coordination = query_context->isDistributedForQueryCoord()
         && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
@@ -1132,7 +1133,7 @@ void TCPHandler::processOrdinaryQueryWithCoordination(std::function<void()> fini
     if (secondary_query_coordination)
     {
         {
-            auto completed_pipelines_executor = state.io.query_coord_state.pipelines.createNonRootPipelinesExecutor();
+            const auto non_root_executor = state.io.query_coord_state.pipelines.createNonRootPipelinesExecutor();
 
             auto callback = [this]()
             {
@@ -1148,11 +1149,9 @@ void TCPHandler::processOrdinaryQueryWithCoordination(std::function<void()> fini
                 return false;
             };
 
-            completed_pipelines_executor->setCancelCallback(callback, interactive_delay / 1000);
-            completed_pipelines_executor->execute();
+            non_root_executor->setCancelCallback(callback, interactive_delay / 1000);
+            non_root_executor->execute();
         }
-
-        finish_or_cancel();
 
         std::lock_guard lock(task_callback_mutex);
 
@@ -1265,7 +1264,6 @@ void TCPHandler::processOrdinaryQueryWithCoordination(std::function<void()> fini
         }
 
         sendProgress();
-        finish_or_cancel();
     }
 }
 
