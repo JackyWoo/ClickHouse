@@ -42,6 +42,10 @@ private:
     void buildFragments();
 
     ASTPtr query_ptr;
+    /// Only when allow_experimental_analyzer = 1, used to store the optimized query tree.
+    /// We should send it to the remote servers to keep the same query tree,
+    /// because the remote servers will not optimize query tree support to avoid header miss match.
+    QueryTreeNodePtr query_tree;
     ContextMutablePtr context;
     SelectQueryOptions options;
 

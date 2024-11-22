@@ -106,7 +106,7 @@ QueryPlan Memo::extractPlan()
     SubQueryPlan plan = extractPlan(*root_group, required_prop);
 
     WriteBufferFromOwnString buffer;
-    SubQueryPlan::ExplainPlanOptions settings;
+    SubQueryPlan::ExplainPlanOptions settings{.statistics = true};
     plan.explainPlan(buffer, settings);
 
     LOG_TRACE(log, "Found best plan:\n {}", buffer.str());

@@ -238,11 +238,13 @@ void InterpreterSelectQueryCoordination::buildQueryPlanIfNeeded()
         return;
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-        plan = InterpreterSelectQueryAnalyzer(query_ptr, context, options).extractQueryPlan();
-    else if (query_ptr->as<ASTSelectQuery>())
-        InterpreterSelectQuery(query_ptr, context, options).buildQueryPlan(plan);
+    {
+        InterpreterSelectQueryAnalyzer interpreter(query_ptr, context, options);
+        query_tree = interpreter.getQueryTree();
+        plan = std::move(interpreter).extractQueryPlan();
+    }
     else
-        InterpreterSelectWithUnionQuery(query_ptr, context, options).buildQueryPlan(plan);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Query coordination is not supported in old analyzer.");
 }
 
 void InterpreterSelectQueryCoordination::optimize()
@@ -363,14 +365,13 @@ BlockIO InterpreterSelectQueryCoordination::execute()
         fragments.front()->dumpPlan(fragment_plan_desc, {});
         LOG_TRACE(log, "Fragment plan {}\n", fragment_plan_desc.str());
 
-
         /// save fragments wait for be scheduled
         res.query_coord_state.fragments = fragments;
 
         /// schedule fragments
         if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
         {
-            Coordinator coordinator(fragments, context, formattedAST(query_ptr));
+            Coordinator coordinator(fragments, context, query_tree->formatConvertedASTForErrorMessage());
             coordinator.schedule();
 
             /// local already be scheduled

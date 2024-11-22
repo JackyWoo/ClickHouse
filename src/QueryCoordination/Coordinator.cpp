@@ -313,7 +313,7 @@ void Coordinator::buildLocalPipelines(bool only_analyze)
 
 void Coordinator::sendFragments()
 {
-    LOG_DEBUG(log, "Sending fragments to others to prepare pipelines.");
+    LOG_DEBUG(log, "Sending query and fragments to others to prepare pipelines. Query: {}", query);
 
     const std::unordered_map<UInt32, FragmentRequest> & fragment_requests = buildFragmentRequest();
     for (const auto & [f_id, request] : fragment_requests)
