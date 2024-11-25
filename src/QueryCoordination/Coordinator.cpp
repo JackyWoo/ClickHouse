@@ -202,7 +202,26 @@ void Coordinator::assignFragmentToHost()
                 }
                 else /// Hashed or Replicated
                 {
-                    for (const auto & host : child_hosts)
+                    /// Assign the fragment to all hosts, there are two cases:
+                    ///     1. multiple node -> multiple node
+                    ///     2. single node -> multiple node
+                    ///
+                    /// For single node -> multiple node, we can not use child_hosts directly, because the child_hosts contains only one host.
+                    ///             |
+                    ///        CreatingSets
+                    ///        /         \
+                    ///     Scan        CreatingSet
+                    ///                   |
+                    ///                 ExchangeData(Replicated)
+                    ///                   |
+                    ///                 Limit
+                    ///                   |
+                    ///                 ExchangeData(Singleton)
+                    ///                   |
+                    ///                 Scan
+                    ///
+                    /// Here we can use host_fragments, for all hosts are added to it when we handle leaf fragments.
+                    for (const auto & [host, _] : host_fragments)
                     {
                         host_fragments[host].emplace_back(frame.node);
                         fragment_hosts[frame.node->getID()].emplace_back(host);

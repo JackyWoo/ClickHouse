@@ -1,6 +1,5 @@
 #pragma once
 
-#include <QueryCoordination/Exchange/ExchangeDataSource.h>
 #include <QueryCoordination/Fragments/Fragment.h>
 #include <QueryCoordination/Fragments/FragmentRequest.h>
 
