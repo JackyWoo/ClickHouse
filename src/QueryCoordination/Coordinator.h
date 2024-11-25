@@ -31,10 +31,10 @@ public:
 private:
     void assignFragmentToHost();
 
-    void assignSourceFragment(const FragmentPtr & fragment);
+    void assignLeafFragment(const FragmentPtr & fragment);
 
-    [[ maybe_unused ]]PoolBase<Connection>::Entry getConnection(const Cluster::ShardInfo & shard_info, const QualifiedTableName & table_name);
-    PoolBase<Connection>::Entry getConnection(const Cluster::ShardInfo & shard_info);
+    [[ maybe_unused ]]PoolBase<Connection>::Entry getConnection(const Cluster::ShardInfo & shard_info, const QualifiedTableName & table_name) const;
+    PoolBase<Connection>::Entry getConnection(const Cluster::ShardInfo & shard_info) const;
 
     [[ maybe_unused ]]bool isUpToDate(const QualifiedTableName & table_name) const;
 
@@ -59,7 +59,6 @@ private:
 
     // all destinations
     std::unordered_map<String, IConnectionPool::Entry> host_connection;
-    std::unordered_map<UInt32, String> shard_num_to_host;
 
     String local_host;
 

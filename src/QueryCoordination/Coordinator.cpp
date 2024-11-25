@@ -68,7 +68,7 @@ void Coordinator::explainPipelines()
     buildLocalPipelines(true);
 }
 
-// PoolBase<Connection>::Entry Coordinator::getConnection(const Cluster::ShardInfo & shard_info, const QualifiedTableName & table_name)
+// PoolBase<Connection>::Entry Coordinator::getConnection(const Cluster::ShardInfo & shard_info, const QualifiedTableName & table_name) const
 // {
 //     const auto & current_settings = context->getSettingsRef();
 //     auto timeouts
@@ -77,31 +77,17 @@ void Coordinator::explainPipelines()
 //     return try_results[0].entry;
 // }
 
-PoolBase<Connection>::Entry Coordinator::getConnection(const Cluster::ShardInfo & shard_info)
+PoolBase<Connection>::Entry Coordinator::getConnection(const Cluster::ShardInfo & shard_info) const
 {
     auto current_settings = context->getSettingsRef();
     auto timeouts
         = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings).getSaturated(current_settings[Setting::max_execution_time]);
-
-    if (shard_num_to_host.contains(shard_info.shard_num))
-        return shard_info.pool->getOne(timeouts, current_settings, shard_num_to_host.at(shard_info.shard_num));
-
     auto try_results = shard_info.pool->getMany(timeouts, current_settings, PoolMode::GET_ONE);
-    shard_num_to_host[shard_info.shard_num] = try_results[0]->getHostPort();
-
     return try_results[0];
 }
 
-void Coordinator::assignSourceFragment(const FragmentPtr & fragment)
+void Coordinator::assignLeafFragment(const FragmentPtr & fragment)
 {
-    /// Some fragments maight have multiple scan steps, we need only assign the segment based on one of the scan steps.
-    ///
-    ///            union
-    ///           /     \
-    ///  expression     expression
-    ///         /         \
-    ///      scan         scan
-
     const auto & custer_name = context->getQueryCoordinationMetaInfo().cluster_name;
     if (!context->getClusters().contains(custer_name))
         throw Exception(
@@ -139,7 +125,9 @@ void Coordinator::assignSourceFragment(const FragmentPtr & fragment)
         }
 
         auto fragment_id = fragment->getID();
-        host_connection[host_port] = connection;
+        /// we can have multiple leaf fragments but we only need one connection for one host.
+        if (!host_connection.contains(host_port))
+            host_connection[host_port] = connection;
         fragment_hosts[fragment_id].emplace_back(host_port);
         host_fragments[host_port].emplace_back(fragment);
     }
@@ -163,7 +151,7 @@ void Coordinator::assignFragmentToHost()
         if (frame.node->getChildren().empty())
         {
             /// leaf node
-            assignSourceFragment(frame.node);
+            assignLeafFragment(frame.node);
             stack.pop();
         }
         else
