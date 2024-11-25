@@ -1,8 +1,8 @@
 #pragma once
 
 #include <functional>
+#include <Scheduler/SchedulingState.h>
 #include <QueryPipeline/QueryPipeline.h>
-#include <QueryCoordination/QueryCoordinationState.h>
 
 
 namespace DB
@@ -26,7 +26,7 @@ struct BlockIO
     QueryPipeline pipeline;
 
     /// For query coordination
-    QueryCoordinationState query_coord_state;
+    SchedulingState scheduling_state;
 
     /// Callbacks for query logging could be set here.
     std::function<void(QueryPipeline &)> finish_callback;

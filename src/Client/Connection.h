@@ -37,7 +37,7 @@ class NativeReader;
 class NativeWriter;
 struct FragmentsRequest;
 struct ExchangeDataRequest;
-class QueryCoordinationMetaInfo;
+class DistributedTablesInfo;
 
 
 /** Connection with database server, to use by client.
@@ -135,7 +135,7 @@ public:
         const Settings * settings,
         const ClientInfo * client_info,
         const FragmentsRequest & fragment,
-        const QueryCoordinationMetaInfo & meta_info);
+        const DistributedTablesInfo & distributed_tables_info);
 
     void sendBeginExecutePipelines(const String & query_id_);
 

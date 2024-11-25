@@ -123,7 +123,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <base/defines.h>
 #include <base/find_symbols.h>
-#include <QueryCoordination/Coordinator.h>
+#include <Scheduler/FragmentScheduler.h>
 #include <Optimizer/Statistics/IStatisticsStorage.h>
 #include <Optimizer/Statistics/CachedStatisticsStorage.h>
 
@@ -1541,26 +1541,26 @@ std::optional<UUID> Context::getUserID() const
     return user_id;
 }
 
-void Context::addQueryCoordinationMetaInfo(String cluster_name_, const std::vector<StorageID> & storages_, const std::vector<String> & sharding_keys_)
+void Context::addDistributedTableInfo(String cluster_name_, const std::vector<StorageID> & storages_, const std::vector<String> & sharding_keys_)
 {
     std::lock_guard lock(mutex);
-    if (query_coordination_meta.cluster_name.empty())
+    if (distributed_tables_info.cluster_name.empty())
     {
-        query_coordination_meta.cluster_name = cluster_name_;
-        query_coordination_meta.storages = storages_;
-        query_coordination_meta.sharding_keys = sharding_keys_;
+        distributed_tables_info.cluster_name = cluster_name_;
+        distributed_tables_info.storages = storages_;
+        distributed_tables_info.sharding_keys = sharding_keys_;
     }
     else
     {
-        query_coordination_meta.storages.insert(query_coordination_meta.storages.end(), storages_.begin(), storages_.end());
-        query_coordination_meta.sharding_keys.insert(query_coordination_meta.sharding_keys.end(), sharding_keys_.begin(), sharding_keys_.end());
+        distributed_tables_info.storages.insert(distributed_tables_info.storages.end(), storages_.begin(), storages_.end());
+        distributed_tables_info.sharding_keys.insert(distributed_tables_info.sharding_keys.end(), sharding_keys_.begin(), sharding_keys_.end());
     }
 }
 
-const QueryCoordinationMetaInfo & Context::getQueryCoordinationMetaInfo() const
+const DistributedTablesInfo & Context::getDistributedTablesInfo() const
 {
     std::lock_guard lock(mutex);
-    return query_coordination_meta;
+    return distributed_tables_info;
 }
 
 void Context::setCurrentRolesWithLock(const std::vector<UUID> & new_current_roles, const std::lock_guard<ContextSharedMutex> &)

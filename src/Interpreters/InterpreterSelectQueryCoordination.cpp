@@ -6,15 +6,14 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectQueryCoordination.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/ReplaceDistributedTableNameVisitor.h>
 #include <Optimizer/CostBasedOptimizer.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <QueryCoordination/Coordinator.h>
-#include <QueryCoordination/Fragments/Fragment.h>
-#include <QueryCoordination/Fragments/FragmentBuilder.h>
+#include <Scheduler/FragmentScheduler.h>
+#include <Scheduler/Fragments/Fragment.h>
+#include <Scheduler/Fragments/FragmentBuilder.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
 #include "Core/Settings.h"
@@ -181,7 +180,7 @@ InterpreterSelectQueryCoordination::InterpreterSelectQueryCoordination(
                 {
                     query_coordination_enabled = true;
                     String cluster_name = visitor.clusters.begin()->get()->getName();
-                    context->addQueryCoordinationMetaInfo(cluster_name, visitor.storages, visitor.sharding_keys);
+                    context->addDistributedTableInfo(cluster_name, visitor.storages, visitor.sharding_keys);
                 }
             }
 
@@ -286,8 +285,8 @@ void InterpreterSelectQueryCoordination::explainPipeline(WriteBufferFromOwnStrin
     if (!root_fragment)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "EXPLAIN PIPELINE but there is no fragments.");
 
-    Coordinator coordinator(root_fragment, context, query_tree->formatConvertedASTForErrorMessage());
-    coordinator.explainPipelines();
+    FragmentScheduler scheduler(root_fragment, context, query_tree->formatConvertedASTForErrorMessage());
+    scheduler.explainPipelines();
 
     root_fragment->dumpPipeline(buf, options_);
 }
@@ -354,18 +353,18 @@ BlockIO InterpreterSelectQueryCoordination::execute()
         LOG_TRACE(log, "Fragment plan {}\n", fragment_plan_desc.str());
 
         /// save fragments wait for be scheduled
-        res.query_coord_state.fragments = fragments;
+        res.scheduling_state.fragments = fragments;
 
         /// schedule fragments
         if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
         {
-            Coordinator coordinator(root_fragment, context, query_tree->formatConvertedASTForErrorMessage());
-            coordinator.schedule();
+            FragmentScheduler scheduler(root_fragment, context, query_tree->formatConvertedASTForErrorMessage());
+            scheduler.schedule();
 
             /// local already be scheduled
-            res.query_coord_state.pipelines = std::move(coordinator.extractPipelines());
-            res.query_coord_state.remote_connections = coordinator.getRemoteHostConnection();
-            res.pipeline = res.query_coord_state.pipelines.detachRootPipeline();
+            res.scheduling_state.pipelines = std::move(scheduler.extractPipelines());
+            res.scheduling_state.remote_connections = scheduler.getRemoteHostConnection();
+            res.pipeline = res.scheduling_state.pipelines.detachRootPipeline();
 
             /// TODO quota only use to root pipeline?
             if (!options.ignore_quota)

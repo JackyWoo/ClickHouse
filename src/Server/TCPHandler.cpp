@@ -63,11 +63,10 @@
 
 #include <fmt/format.h>
 
-#include <QueryCoordination/Pipelines/RemoteExecutorsManager.h>
-#include <QueryCoordination/Coordinator.h>
-#include <QueryCoordination/QueryCoordinationExecutor.h>
-#include <QueryCoordination/Exchange/ExchangeManager.h>
-#include <QueryCoordination/fragmentsToPipelines.h>
+#include <Scheduler/Exchange/ExchangeManager.h>
+#include <Scheduler/FragmentPipelinesExecutor.h>
+#include <Scheduler/FragmentScheduler.h>
+#include <Scheduler/fragmentsToPipelines.h>
 
 
 using namespace std::literals;
@@ -604,9 +603,9 @@ void TCPHandler::runImpl()
             if (state.fragments_request && query_context->isDistributedForQueryCoord()
                 && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
             {
-                auto specified_cluster = query_context->getClusters().find(query_context->getQueryCoordinationMetaInfo().cluster_name)->second;
-                state.io.query_coord_state.pipelines = fragmentsToPipelines(
-                    state.io.query_coord_state.fragments,
+                auto specified_cluster = query_context->getClusters().find(query_context->getDistributedTablesInfo().cluster_name)->second;
+                state.io.scheduling_state.pipelines = fragmentsToPipelines(
+                    state.io.scheduling_state.fragments,
                     state.fragments_request->fragmentsRequest(),
                     query_context->getCurrentQueryId(),
                     query_context->getSettingsRef(),
@@ -1133,7 +1132,7 @@ void TCPHandler::processOrdinaryQueryWithCoordination()
     if (secondary_query_coordination)
     {
         {
-            const auto non_root_executor = state.io.query_coord_state.pipelines.createNonRootPipelinesExecutor();
+            const auto non_root_executor = state.io.scheduling_state.pipelines.createNonRootPipelinesExecutor();
 
             auto callback = [this]()
             {
@@ -1188,10 +1187,10 @@ void TCPHandler::processOrdinaryQueryWithCoordination()
 
         {
             auto executor
-                = state.io.query_coord_state.pipelines.createCoordinationExecutor(pipeline, state.io.query_coord_state.storage_limits, interactive_delay / 1000);
+                = state.io.scheduling_state.pipelines.createCoordinationExecutor(pipeline, state.io.scheduling_state.storage_limits, interactive_delay / 1000);
 
             auto remote_pipelines_manager = executor->getRemoteExecutorsManager();
-            remote_pipelines_manager->setManagedNode(state.io.query_coord_state.remote_connections);
+            remote_pipelines_manager->setManagedNode(state.io.scheduling_state.remote_connections);
             remote_pipelines_manager->setProgressCallback(
                 [this](const Progress & value) { this->updateProgress(value); }, query_context->getProcessListElement());
 
@@ -2102,11 +2101,11 @@ void TCPHandler::receiveFragments()
     fragments_request.read(*in);
     state.fragments_request.emplace(fragments_request);
 
-    QueryCoordinationMetaInfo meta_info;
-    meta_info.read(*in);
+    DistributedTablesInfo distributed_tables_info;
+    distributed_tables_info.read(*in);
 
-    LOG_DEBUG(log, "Receive QueryCoordinationMetaInfo {}", meta_info.toString());
-    query_context->addQueryCoordinationMetaInfo(meta_info.cluster_name, meta_info.storages, meta_info.sharding_keys);
+    LOG_DEBUG(log, "Receive QueryCoordinationMetaInfo {}", distributed_tables_info.toString());
+    query_context->addDistributedTableInfo(distributed_tables_info.cluster_name, distributed_tables_info.storages, distributed_tables_info.sharding_keys);
     query_context->setDistributedForQueryCoord(true);
 }
 

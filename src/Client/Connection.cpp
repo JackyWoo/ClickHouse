@@ -39,12 +39,12 @@
 #include <Core/Types.h>
 #include "config.h"
 
+#include <Interpreters/Cluster.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/ISink.h>
-#include <QueryCoordination/Fragments/FragmentRequest.h>
-#include <QueryCoordination/QueryCoordinationMetaInfo.h>
-#include <QueryCoordination/Exchange/ExchangeDataRequest.h>
-#include <Interpreters/Cluster.h>
+#include <Scheduler/DistributedTablesInfo.h>
+#include <Scheduler/Exchange/ExchangeDataRequest.h>
+#include <Scheduler/Fragments/FragmentRequest.h>
 
 
 #if USE_SSL
@@ -975,14 +975,14 @@ void Connection::sendFragments(
     const Settings * settings,
     const ClientInfo * client_info,
     const FragmentsRequest & fragment,
-    const QueryCoordinationMetaInfo & meta_info)
+    const DistributedTablesInfo & distributed_tables_info)
 {
     writeVarUInt(Protocol::Client::PlanFragments, *out);
     sendQuery(timeouts, query, query_parameters, query_id_, stage, settings, client_info, true, {}, false);
     fragment.write(*out);
 
-    LOG_DEBUG(log_wrapper.get(), "Send QueryCoordinationMetaInfo {}", meta_info.toString());
-    meta_info.write(*out);
+    LOG_DEBUG(log_wrapper.get(), "Send distributed tables info {}", distributed_tables_info.toString());
+    distributed_tables_info.write(*out);
     sendData(Block(), "", false); // tcphandler and executeQuery use initializeExternalTablesIfSet
     out->next();
 }

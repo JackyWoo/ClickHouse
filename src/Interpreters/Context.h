@@ -29,7 +29,7 @@
 #include <mutex>
 #include <optional>
 
-#include <QueryCoordination/QueryCoordinationMetaInfo.h>
+#include <Scheduler/DistributedTablesInfo.h>
 
 
 namespace Poco::Net
@@ -344,7 +344,7 @@ protected:
     Int32 fragment_id_counter = 0;
 
     /// for query coordination secondary query
-    QueryCoordinationMetaInfo query_coordination_meta;
+    DistributedTablesInfo distributed_tables_info;
 
 public:
     /// Record entities accessed by current query, and store this information in system.query_log.
@@ -657,8 +657,8 @@ public:
         return ++fragment_id_counter;
     }
 
-    void addQueryCoordinationMetaInfo(String cluster_name_, const std::vector<StorageID> & storages_, const std::vector<String> & sharding_keys_);
-    const QueryCoordinationMetaInfo & getQueryCoordinationMetaInfo() const;
+    void addDistributedTableInfo(String cluster_name_, const std::vector<StorageID> & storages_, const std::vector<String> & sharding_keys_);
+    const DistributedTablesInfo & getDistributedTablesInfo() const;
 
     void setQuotaKey(String quota_key_);
 

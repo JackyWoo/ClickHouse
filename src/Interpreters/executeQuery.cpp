@@ -83,9 +83,9 @@
 #include <memory>
 #include <random>
 
-#include <QueryCoordination/Exchange/ExchangeManager.h>
-#include <QueryCoordination/QueryCoordinationExecutor.h>
-#include <QueryCoordination/Pipelines/RemoteExecutorsManager.h>
+#include <Scheduler/Exchange/ExchangeManager.h>
+#include <Scheduler/FragmentPipelinesExecutor.h>
+#include <Scheduler/RemoteExecutorsManager.h>
 
 
 namespace ProfileEvents
@@ -1761,11 +1761,11 @@ void executeQuery(
         {
             if (context->isDistributedForQueryCoord())
             {
-                auto executor = streams.query_coord_state.pipelines.createCoordinationExecutor(
-                    pipeline, streams.query_coord_state.storage_limits, context->getSettingsRef()[Setting::interactive_delay] / 1000);
+                auto executor = streams.scheduling_state.pipelines.createCoordinationExecutor(
+                    pipeline, streams.scheduling_state.storage_limits, context->getSettingsRef()[Setting::interactive_delay] / 1000);
 
                 auto remote_pipelines_manager = executor->getRemoteExecutorsManager();
-                remote_pipelines_manager->setManagedNode(streams.query_coord_state.remote_connections);
+                remote_pipelines_manager->setManagedNode(streams.scheduling_state.remote_connections);
                 remote_pipelines_manager->setProgressCallback(progress_callback, context->getProcessListElement());
                 executor->execute();
             }

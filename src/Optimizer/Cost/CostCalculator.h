@@ -33,8 +33,7 @@ public:
         , cbo_settings(task_context_->getOptimizeContext()->getCBOSettings())
         , cost_weight(cost_settings.getCostWeight())
     {
-        auto query_coordination_info = context->getQueryCoordinationMetaInfo();
-        auto cluster = context->getCluster(query_coordination_info.cluster_name);
+        auto cluster = context->getCluster(context->getDistributedTablesInfo().cluster_name);
         node_count = cluster->getShardCount();
     }
 

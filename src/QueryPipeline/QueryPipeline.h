@@ -171,7 +171,7 @@ private:
     friend class QueryPipelineBuilder;
     friend class PipelineExecutors;
     friend class NonRootPipelinesExecutor;
-    friend class QueryCoordinationExecutor;
+    friend class FragmentPipelinesExecutor;
 };
 
 }

@@ -67,7 +67,7 @@ Stats DeriveStatistics::visit(ReadFromMergeTree & step)
     chassert(input_statistics.empty());
 
     auto storage_id = step.getStorageID();
-    auto cluster_name = context->getQueryCoordinationMetaInfo().cluster_name;
+    auto cluster_name = context->getDistributedTablesInfo().cluster_name;
 
     /// 1. init by statistics storage
     auto input = context->getStatisticsStorage()->get(storage_id, cluster_name);

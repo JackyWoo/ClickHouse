@@ -1,0 +1,27 @@
+#pragma once
+
+#include <Interpreters/Cluster.h>
+#include <Scheduler/Fragments/FragmentRequest.h>
+#include <Scheduler/Pipelines/FragmentPipelines.h>
+
+
+namespace DB
+{
+
+class Fragment;
+
+using FragmentPtr = std::shared_ptr<Fragment>;
+using FragmentPtrs = std::vector<FragmentPtr>;
+
+struct Settings;
+
+FragmentPipelines fragmentsToPipelines(
+    const FragmentPtrs & all_fragments,
+    const std::vector<FragmentRequest> & plan_fragment_requests,
+    const String & query_id,
+    const Settings & settings,
+    const ClusterPtr & cluster,
+    bool only_analyze = false);
+
+
+};

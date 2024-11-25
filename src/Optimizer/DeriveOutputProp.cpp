@@ -130,18 +130,18 @@ std::optional<PhysicalProperty> DeriveOutputProp::visit(ReadFromMergeTree & step
         return res;
     }
 
-    const auto & meta_info = context->getQueryCoordinationMetaInfo();
+    const auto & distributed_tables_info = context->getDistributedTablesInfo();
     const auto & storage_id = step.getStorageID();
 
-    auto table_it = std::find(meta_info.storages.begin(), meta_info.storages.end(), storage_id);
-    if (table_it == meta_info.storages.end())
+    const auto table_it = std::ranges::find(distributed_tables_info.storages.begin(), distributed_tables_info.storages.end(), storage_id);
+    if (table_it == distributed_tables_info.storages.end())
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Not found {}.{} in {}", storage_id.database_name, storage_id.table_name, meta_info.toString());
+            ErrorCodes::LOGICAL_ERROR, "Not found {}.{} in {}", storage_id.database_name, storage_id.table_name, distributed_tables_info.toString());
 
     /// distribute by any integer type value. TODO need to distinguish which functions have a clear distribution of data. e.g rand() is not clear, hash is clear and single column is clear
     /// TODO Enabling optimize_query_coordination_sharding_key may cause incorrect results, such as sharding key is cityHash64(xid + zid), which is not sharding with xid and zid.
-    size_t table_idx = std::distance(meta_info.storages.begin(), table_it);
-    const String & sharding_key = meta_info.sharding_keys[table_idx];
+    size_t table_idx = std::distance(distributed_tables_info.storages.begin(), table_it);
+    const String & sharding_key = distributed_tables_info.sharding_keys[table_idx];
 
     if (sharding_key.empty())
     {

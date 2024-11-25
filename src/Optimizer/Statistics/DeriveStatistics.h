@@ -19,8 +19,7 @@ public:
         , stats_settings(StatsSettings::fromContext(context_))
         , log(&Poco::Logger::get("DeriveStatistics"))
     {
-        auto query_coordination_info = context->getQueryCoordinationMetaInfo();
-        auto cluster = context->getCluster(query_coordination_info.cluster_name);
+        auto cluster = context->getCluster(context->getDistributedTablesInfo().cluster_name);
         node_count = cluster->getShardCount();
     }
 

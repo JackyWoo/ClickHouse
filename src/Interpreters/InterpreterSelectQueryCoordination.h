@@ -2,7 +2,7 @@
 
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
 #include <Optimizer/SubQueryPlan.h>
-#include <QueryCoordination/Fragments/Fragment.h>
+#include <Scheduler/Fragments/Fragment.h>
 
 namespace DB
 {
