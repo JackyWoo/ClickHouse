@@ -23,7 +23,7 @@ Pipelines PipelinesBuilder::build(bool only_analyze)
         auto fragment = distributed_fragment.getFragment();
         const auto & data_to = distributed_fragment.getDataTo();
         for (const auto & to : data_to)
-            LOG_DEBUG(log, "Fragment {} will send data to {}", fragment->getFragmentID(), to);
+            LOG_DEBUG(log, "Fragment {} will send data to {}", fragment->getID(), to);
 
         /// for data sink
         std::vector<ExchangeDataSink::Channel> channels;
@@ -54,7 +54,7 @@ Pipelines PipelinesBuilder::build(bool only_analyze)
                 auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings).getSaturated(settings[Setting::max_execution_time]);
                 auto connection = shards_info[i].pool->getOne(timeouts, settings, target_host_port);
 
-                LOG_DEBUG(log, "Fragment {} will actually send data to {}", fragment->getFragmentID(), connection->getHostPort());
+                LOG_DEBUG(log, "Fragment {} will actually send data to {}", fragment->getID(), connection->getHostPort());
                 channels.emplace_back(ExchangeDataSink::Channel{.connection = connection, .is_local = (local_host == target_host_port)});
             }
 
@@ -80,7 +80,7 @@ Pipelines PipelinesBuilder::build(bool only_analyze)
 
         WriteBufferFromOwnString buffer;
         fragment->explainPipeline(buffer);
-        LOG_TRACE(log, "Fragment {} explain pipeline: {}\n", fragment->getFragmentID(), buffer.str());
+        LOG_TRACE(log, "Fragment {} explain pipeline: {}\n", fragment->getID(), buffer.str());
 
         // register ExchangeDataSource
         if (!only_analyze)
@@ -93,7 +93,7 @@ Pipelines PipelinesBuilder::build(bool only_analyze)
                     ExchangeDataRequest request{
                         .from_host = receiver->getSource(),
                         .query_id = query_id,
-                        .fragment_id = fragment->getFragmentID(),
+                        .fragment_id = fragment->getID(),
                         .exchange_id = receiver->getPlanId()};
 
                     ExchangeManager::getInstance().registerExchangeDataSource(request, receiver->shared_from_this());
@@ -102,9 +102,9 @@ Pipelines PipelinesBuilder::build(bool only_analyze)
         }
 
         if (!fragment->hasDestFragment())
-            pipelines.addRootPipeline(fragment->getFragmentID(), std::move(pipeline));
+            pipelines.addRootPipeline(fragment->getID(), std::move(pipeline));
         else
-            pipelines.addSourcesPipeline(fragment->getFragmentID(), std::move(pipeline));
+            pipelines.addSourcesPipeline(fragment->getID(), std::move(pipeline));
     }
 
     pipelines.assignThreadNum(settings[Setting::max_threads]);

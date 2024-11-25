@@ -220,18 +220,6 @@ SettingsChanges InterpreterSelectQueryCoordination::disableIncompatibleSettings(
     return changes;
 }
 
-static String formattedAST(const ASTPtr & ast)
-{
-    if (!ast)
-        return {};
-
-    WriteBufferFromOwnString buf;
-    IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true);
-    ast_format_settings.hilite = false;
-    ast->format(ast_format_settings);
-    return buf.str();
-}
-
 void InterpreterSelectQueryCoordination::buildQueryPlanIfNeeded()
 {
     if (plan.isInitialized())
@@ -270,7 +258,7 @@ void InterpreterSelectQueryCoordination::buildFragments()
     if (query_coordination_enabled)
     {
         FragmentBuilder builder(plan, context);
-        FragmentPtr root_fragment = builder.build();
+        root_fragment = builder.build();
 
         std::queue<FragmentPtr> queue;
         queue.push(root_fragment);
@@ -295,13 +283,13 @@ void InterpreterSelectQueryCoordination::explainPipeline(WriteBufferFromOwnStrin
     optimize();
     buildFragments();
 
-    if (fragments.empty())
+    if (!root_fragment)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "EXPLAIN PIPELINE but there is no fragments.");
 
-    Coordinator coordinator(fragments, context, formattedAST(query_ptr));
+    Coordinator coordinator(root_fragment, context, query_tree->formatConvertedASTForErrorMessage());
     coordinator.explainPipelines();
 
-    fragments.front()->dumpPipeline(buf, options_);
+    root_fragment->dumpPipeline(buf, options_);
 }
 
 void InterpreterSelectQueryCoordination::explainFragment(WriteBufferFromOwnString & buf, const Fragment::ExplainFragmentOptions & options_)
@@ -371,7 +359,7 @@ BlockIO InterpreterSelectQueryCoordination::execute()
         /// schedule fragments
         if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
         {
-            Coordinator coordinator(fragments, context, query_tree->formatConvertedASTForErrorMessage());
+            Coordinator coordinator(root_fragment, context, query_tree->formatConvertedASTForErrorMessage());
             coordinator.schedule();
 
             /// local already be scheduled

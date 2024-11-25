@@ -31,7 +31,7 @@ void buildFragmentsRelationship(const FragmentPtr & fragment, const FragmentPtr 
         chassert(dest_exchange_node != nullptr);
         auto * exchange_step = typeid_cast<ExchangeDataStep *>(dest_exchange_node->step.get());
         chassert(exchange_step != nullptr);
-        exchange_step->setFragmentID(parent->getFragmentID());
+        exchange_step->setFragmentID(parent->getID());
         exchange_step->setPlanNodeID(dest_exchange_node->id);
     }
 
@@ -81,7 +81,7 @@ void FragmentBuilder::assignFragmentID(const FragmentPtr & fragment)
     fragment->setId(context->getFragmentID());
 
     for (const auto & child : fragment->getChildren())
-        child->setDestFragmentID(fragment->getFragmentID());
+        child->setDestFragmentID(fragment->getID());
 }
 
 FragmentPtr FragmentBuilder::build()

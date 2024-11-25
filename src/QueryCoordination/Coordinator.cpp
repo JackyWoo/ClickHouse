@@ -28,13 +28,19 @@ extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
 }
 
 
-Coordinator::Coordinator(const FragmentPtrs & fragments_, const ContextMutablePtr & context_, const String & query_)
-    : context(context_), query(query_), fragments(fragments_), pipelines(), log(&Poco::Logger::get("Coordinator"))
+Coordinator::Coordinator(const FragmentPtr & root_fragment_, const ContextMutablePtr & context_, const String & query_)
+    : context(context_), query(query_), root_fragment(root_fragment_), log(&Poco::Logger::get("Coordinator"))
 {
-    for (const auto & fragment : fragments)
+    std::stack<FragmentPtr> stack;
+    stack.push(root_fragment);
+    while (!stack.empty())
     {
-        auto fragment_id = fragment->getFragmentID();
-        id_to_fragment[fragment_id] = fragment;
+        auto fragment = stack.top();
+        stack.pop();
+        fragments.push_back(fragment);
+        id_to_fragment[fragment->getID()] = fragment;
+        for (const auto & child : fragment->getChildren())
+            stack.push(child);
     }
 }
 
@@ -44,7 +50,7 @@ void Coordinator::schedule()
 
     for (auto & [host, fragments_for_host] : host_fragments)
         for (auto & fragment : fragments_for_host)
-            LOG_DEBUG(log, "host_fragment_ids: host {}, fragment {}", host, fragment->getFragmentID());
+            LOG_DEBUG(log, "host_fragment_ids: host {}, fragment {}", host, fragment->getID());
 
     buildLocalPipelines();
     sendFragments();
@@ -62,190 +68,184 @@ void Coordinator::explainPipelines()
     buildLocalPipelines(true);
 }
 
-PoolBase<Connection>::Entry Coordinator::getConnection(const Cluster::ShardInfo & shard_info, const QualifiedTableName & table_name) const
-{
-    const auto & current_settings = context->getSettingsRef();
-    auto timeouts
-        = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings).getSaturated(current_settings[Setting::max_execution_time]);
-    auto try_results = shard_info.pool->getManyChecked(timeouts, current_settings, PoolMode::GET_ONE, table_name);
-    return try_results[0].entry;
-}
+// PoolBase<Connection>::Entry Coordinator::getConnection(const Cluster::ShardInfo & shard_info, const QualifiedTableName & table_name)
+// {
+//     const auto & current_settings = context->getSettingsRef();
+//     auto timeouts
+//         = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings).getSaturated(current_settings[Setting::max_execution_time]);
+//     auto try_results = shard_info.pool->getManyChecked(timeouts, current_settings, PoolMode::GET_ONE, table_name);
+//     return try_results[0].entry;
+// }
 
-PoolBase<Connection>::Entry Coordinator::getConnection(const Cluster::ShardInfo & shard_info) const
+PoolBase<Connection>::Entry Coordinator::getConnection(const Cluster::ShardInfo & shard_info)
 {
     auto current_settings = context->getSettingsRef();
     auto timeouts
         = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings).getSaturated(current_settings[Setting::max_execution_time]);
+
+    if (shard_num_to_host.contains(shard_info.shard_num))
+        return shard_info.pool->getOne(timeouts, current_settings, shard_num_to_host.at(shard_info.shard_num));
+
     auto try_results = shard_info.pool->getMany(timeouts, current_settings, PoolMode::GET_ONE);
+    shard_num_to_host[shard_info.shard_num] = try_results[0]->getHostPort();
+
     return try_results[0];
 }
 
-FragmentToHosts Coordinator::assignSourceFragment()
+void Coordinator::assignSourceFragment(const FragmentPtr & fragment)
 {
-    FragmentToHosts scan_fragment_hosts;
-    for (const auto & fragment : fragments)
+    /// Some fragments maight have multiple scan steps, we need only assign the segment based on one of the scan steps.
+    ///
+    ///            union
+    ///           /     \
+    ///  expression     expression
+    ///         /         \
+    ///      scan         scan
+
+    const auto & custer_name = context->getQueryCoordinationMetaInfo().cluster_name;
+    if (!context->getClusters().contains(custer_name))
+        throw Exception(
+            ErrorCodes::CLUSTER_DOESNT_EXIST, "Cluster {} does not exist", custer_name);
+
+    const auto & cluster = context->getClusters().find(custer_name)->second;
+
+    for (const auto & shard_info : cluster->getShardsInfo())
     {
-        /// Some fragments maight have multiple scan steps, we need only assign the segment based on one of the scan steps.
-        ///
-        ///            union
-        ///           /     \
-        ///  expression     expression
-        ///         /         \
-        ///      scan         scan
-        auto any_scan_it = std::ranges::find_if(
-            fragment->getNodes().cbegin(),
-            fragment->getNodes().cend(),
-            [](const auto & node) { return node.step->stepType() == StepType::Scan; });
-
-        if (any_scan_it != fragment->getNodes().cend())
+        PoolBase<Connection>::Entry connection;
+        String host_port;
+        if (shard_info.isLocal())
         {
-            if (!context->getClusters().contains(context->getQueryCoordinationMetaInfo().cluster_name))
-                throw Exception(
-                    ErrorCodes::CLUSTER_DOESNT_EXIST, "Cluster {} does not exist", context->getQueryCoordinationMetaInfo().cluster_name);
+            local_host = shard_info.local_addresses[0].toString();
+            host_port = local_host;
+            /// the connection of local host is empty
 
-            const auto & cluster = context->getClusters().find(context->getQueryCoordinationMetaInfo().cluster_name)->second;
-
-            for (const auto & shard_info : cluster->getShardsInfo())
-            {
-                PoolBase<DB::Connection>::Entry connection;
-                String host_port;
-                if (shard_info.isLocal())
-                {
-                    local_host = shard_info.local_addresses[0].toString();
-                    host_port = local_host;
-
-                    const auto & node = *any_scan_it;
-                    if (const auto * read_step = typeid_cast<ReadFromMergeTree *>(node.step.get()))
-                    {
-                        const auto & table_name = read_step->getStorageSnapshot()->storage.getStorageID().getQualifiedName();
-                        if (!isUpToDate(table_name))
-                        {
-                            connection = getConnection(shard_info, table_name);
-                            host_port = connection->getHostPort();
-                        }
-                    }
-                }
-                else
-                {
-                    connection = getConnection(shard_info);
-                    host_port = connection->getHostPort();
-                }
-
-                auto fragment_id = fragment->getFragmentID();
-                scan_fragment_hosts[fragment_id].emplace_back(host_port);
-                host_connection[host_port] = connection;
-                fragment_hosts[fragment_id].emplace_back(host_port);
-                host_fragments[host_port].emplace_back(fragment);
-            }
+            // const auto & node = *any_scan_it;
+            // /// right now we only support ReadFromMergeTree
+            // if (const auto * read_step = typeid_cast<ReadFromMergeTree *>(node.step.get()))
+            // {
+            //     const auto table_name = read_step->getStorageSnapshot()->storage.getStorageID().getQualifiedName();
+            //     /// whether we use local table or remote table
+            //     if (!isUpToDate(table_name))
+            //     {
+            //         connection = getConnection(shard_info, table_name);
+            //         host_port = connection->getHostPort();
+            //     }
+            // }
         }
-    }
+        else
+        {
+            connection = getConnection(shard_info);
+            host_port = connection->getHostPort();
+        }
 
-    return scan_fragment_hosts;
+        auto fragment_id = fragment->getID();
+        host_connection[host_port] = connection;
+        fragment_hosts[fragment_id].emplace_back(host_port);
+        host_fragments[host_port].emplace_back(fragment);
+    }
 }
 
 void Coordinator::assignFragmentToHost()
 {
-    /// Process leaf fragments
-    const std::unordered_map<UInt32, std::vector<String>> scan_fragment_hosts = assignSourceFragment();
-
-    // For a fragment with a scan step, process its destination (parent) fragment.
-
-    auto process_other_fragment = [this](FragmentToHosts & fragment_hosts_) -> FragmentToHosts
+    struct Frame
     {
-        FragmentToHosts this_fragment_hosts;
-        for (const auto & [fragment_id, hosts] : fragment_hosts_)
-        {
-            const auto & fragment = id_to_fragment[fragment_id];
-            auto dest_fragment_id = fragment->getDestFragmentID();
-
-            if (!fragment->hasDestFragment())
-                return this_fragment_hosts;
-
-            auto dest_fragment = id_to_fragment[dest_fragment_id];
-
-            /// dest_fragment scheduling by the first child node
-            if (dest_fragment->getChildren().size() > 1)
-            {
-                if (fragment_id != dest_fragment->getChildren()[0]->getFragmentID())
-                    continue;
-            }
-
-            if (fragment_hosts_.contains(dest_fragment_id))
-                return this_fragment_hosts;
-
-            if (typeid_cast<ExchangeDataStep *>(fragment->getDestExchangeNode()->step.get())->isSingleton())
-            {
-                if (!dest_fragment->hasDestFragment()) /// root fragment
-                {
-                    host_fragments[local_host].emplace_back(dest_fragment);
-                    fragment_hosts[dest_fragment_id].emplace_back(local_host);
-                    this_fragment_hosts[dest_fragment_id].emplace_back(local_host);
-                }
-                else
-                {
-                    const auto & host = hosts[0]; /// multiple node -> single node, choose the first node /// TODO use local host
-                    host_fragments[host].emplace_back(dest_fragment);
-                    fragment_hosts[dest_fragment_id].emplace_back(host);
-                    this_fragment_hosts[dest_fragment_id].emplace_back(host);
-                }
-            }
-            else /// Hashed
-            {
-                for (const auto & host : hosts)
-                {
-                    auto & dest_hosts = fragment_hosts[dest_fragment_id];
-                    if (!std::ranges::count(dest_hosts.begin(), dest_hosts.end(), host))
-                    {
-                        host_fragments[host].emplace_back(dest_fragment);
-                        dest_hosts.emplace_back(host);
-                        this_fragment_hosts[dest_fragment_id].emplace_back(host);
-                    }
-                }
-            }
-        }
-        return this_fragment_hosts;
+        FragmentPtr node;
+        size_t visited_child_size = 0;
     };
 
-    std::optional<FragmentToHosts> fragment_hosts_(scan_fragment_hosts);
-    while (!fragment_hosts_->empty())
+    std::stack<Frame> stack;
+    stack.push(Frame{root_fragment, 0});
+
+    while (!stack.empty())
     {
-        auto tmp = process_other_fragment(fragment_hosts_.value());
-        fragment_hosts_->swap(tmp);
+        auto & frame = stack.top();
+
+        if (frame.node->getChildren().empty())
+        {
+            /// leaf node
+            assignSourceFragment(frame.node);
+            stack.pop();
+        }
+        else
+        {
+            if (frame.visited_child_size < frame.node->getChildren().size())
+            {
+                stack.push(Frame{frame.node->getChildren()[frame.visited_child_size], 0});
+                ++frame.visited_child_size;
+            }
+            else
+            {
+                /// scheduled by the first child node
+                ///             node
+                ///             /  \
+                ///      Exchange  Exchange
+                ///            |    |
+                ///          node  node
+                chassert(!frame.node->getChildren().empty());
+                auto & child_fragment = frame.node->getChildren()[0];
+                auto & child_hosts = fragment_hosts[child_fragment->getID()];
+
+                if (typeid_cast<ExchangeDataStep *>(child_fragment->getDestExchangeNode()->step.get())->isSingleton())
+                {
+                    if (!frame.node->hasDestFragment()) /// root fragment
+                    {
+                        host_fragments[local_host].emplace_back(frame.node);
+                        fragment_hosts[frame.node->getID()].emplace_back(local_host);
+                    }
+                    else
+                    {
+                        /// multiple node -> single node, choose the first node, we can also use local_host
+                        const auto & host = child_hosts[0];
+                        host_fragments[host].emplace_back(frame.node);
+                        fragment_hosts[frame.node->getID()].emplace_back(host);
+                    }
+                }
+                else /// Hashed or Replicated
+                {
+                    for (const auto & host : child_hosts)
+                    {
+                        host_fragments[host].emplace_back(frame.node);
+                        fragment_hosts[frame.node->getID()].emplace_back(host);
+                    }
+                }
+                stack.pop();
+            }
+        }
     }
 }
 
-bool Coordinator::isUpToDate(const QualifiedTableName & table_name) const
-{
-    const auto resolved_id = context->tryResolveStorageID({table_name.database, table_name.table});
-    const StoragePtr table = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
-    if (!table)
-        return false;
-
-    TableStatus status;
-    if (const auto * replicated_table = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
-    {
-        status.is_replicated = true;
-        status.absolute_delay = static_cast<UInt32>(replicated_table->getAbsoluteDelay());
-    }
-    else
-        status.is_replicated = false;
-
-    bool is_up_to_date;
-    UInt64 max_allowed_delay = context->getSettingsRef()[Setting::max_replica_delay_for_distributed_queries];
-    if (!max_allowed_delay)
-    {
-        is_up_to_date = true;
-        return is_up_to_date;
-    }
-
-    UInt32 delay = status.absolute_delay;
-
-    if (delay < max_allowed_delay)
-        is_up_to_date = true;
-    else
-        is_up_to_date = false;
-    return is_up_to_date;
-}
+// bool Coordinator::isUpToDate(const QualifiedTableName & table_name) const
+// {
+//     const auto resolved_id = context->tryResolveStorageID({table_name.database, table_name.table});
+//     const StoragePtr table = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
+//     if (!table)
+//         return false;
+//
+//     TableStatus status;
+//     if (const auto * replicated_table = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
+//     {
+//         status.is_replicated = true;
+//         status.absolute_delay = static_cast<UInt32>(replicated_table->getAbsoluteDelay());
+//     }
+//     else
+//         status.is_replicated = false;
+//
+//     bool is_up_to_date;
+//     UInt64 max_allowed_delay = context->getSettingsRef()[Setting::max_replica_delay_for_distributed_queries];
+//     if (!max_allowed_delay)
+//     {
+//         is_up_to_date = true;
+//         return is_up_to_date;
+//     }
+//
+//     UInt32 delay = status.absolute_delay;
+//
+//     if (delay < max_allowed_delay)
+//         is_up_to_date = true;
+//     else
+//         is_up_to_date = false;
+//     return is_up_to_date;
+// }
 
 std::unordered_map<UInt32, FragmentRequest> Coordinator::buildFragmentRequest()
 {
@@ -270,7 +270,7 @@ std::unordered_map<UInt32, FragmentRequest> Coordinator::buildFragmentRequest()
         if (dest_fragment)
         {
             auto dest_exchange_id = fragment->getDestExchangeID();
-            auto dest_fragment_id = dest_fragment->getFragmentID();
+            auto dest_fragment_id = dest_fragment->getID();
             data_to = fragment_hosts[dest_fragment_id];
 
             /// dest_fragment exchange data_from is current fragment hosts
@@ -297,12 +297,12 @@ void Coordinator::buildLocalPipelines(bool only_analyze)
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
 
-    const std::unordered_map<UInt32, FragmentRequest> & fragment_requests = buildFragmentRequest();
+    const auto fragment_requests = buildFragmentRequest();
 
     FragmentsRequest fragments_request;
     for (const auto & fragment : host_fragments[local_host])
     {
-        const auto & [_, request] = *fragment_requests.find(fragment->getFragmentID());
+        const auto & [_, request] = *fragment_requests.find(fragment->getID());
         fragments_request.fragments_request.emplace_back(request);
     }
 
@@ -315,10 +315,6 @@ void Coordinator::sendFragments()
 {
     LOG_DEBUG(log, "Sending query and fragments to others to prepare pipelines. Query: {}", query);
 
-    const std::unordered_map<UInt32, FragmentRequest> & fragment_requests = buildFragmentRequest();
-    for (const auto & [f_id, request] : fragment_requests)
-        LOG_DEBUG(log, "Fragment {} request {}", f_id, request.toString());
-
     const auto & current_settings = context->getSettingsRef();
     auto timeouts
         = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings).getSaturated(current_settings[Setting::max_execution_time]);
@@ -326,13 +322,15 @@ void Coordinator::sendFragments()
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
 
+    const auto fragment_requests = buildFragmentRequest();
+
     /// send fragments
     for (const auto & [host, fragments_for_send] : host_fragments)
     {
         FragmentsRequest fragments_request;
         for (const auto & fragment : fragments_for_send)
         {
-            const auto & [_, request] = *fragment_requests.find(fragment->getFragmentID());
+            const auto & [_, request] = *fragment_requests.find(fragment->getID());
             fragments_request.fragments_request.emplace_back(request);
         }
 

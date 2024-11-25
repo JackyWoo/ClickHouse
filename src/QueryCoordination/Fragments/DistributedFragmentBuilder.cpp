@@ -5,12 +5,13 @@
 namespace DB
 {
 
-DistributedFragments DistributedFragmentBuilder::build()
+DistributedFragments DistributedFragmentBuilder::build() const
 {
     std::unordered_map<UInt32, FragmentRequest> id_fragments;
     for (const auto & request : plan_fragment_requests)
     {
-        /// LOG_DEBUG(log, "Receive fragment to distributed, need execute {}", request.toString());
+        auto * log = &Poco::Logger::get("DistributedFragmentBuilder");
+        LOG_TRACE(log, "Receive fragment {} from remote", request.fragment_id);
         id_fragments.emplace(request.fragment_id, request);
     }
 
@@ -18,7 +19,7 @@ DistributedFragments DistributedFragmentBuilder::build()
 
     for (const auto & fragment : all_fragments)
     {
-        auto it = id_fragments.find(fragment->getFragmentID());
+        auto it = id_fragments.find(fragment->getID());
         if (it != id_fragments.end())
         {
             auto & request = it->second;

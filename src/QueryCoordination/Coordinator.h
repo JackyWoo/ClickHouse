@@ -18,7 +18,7 @@ using FragmentToHosts = std::unordered_map<FragmentID, Hosts>;
 class Coordinator
 {
 public:
-    explicit Coordinator(const FragmentPtrs & fragments_, const ContextMutablePtr & context_, const String & query_);
+    explicit Coordinator(const FragmentPtr & root_fragment_, const ContextMutablePtr & context_, const String & query_);
 
     void schedule();
     Pipelines && extractPipelines();
@@ -31,12 +31,12 @@ public:
 private:
     void assignFragmentToHost();
 
-    FragmentToHosts assignSourceFragment();
+    void assignSourceFragment(const FragmentPtr & fragment);
 
-    PoolBase<Connection>::Entry getConnection(const Cluster::ShardInfo & shard_info, const QualifiedTableName & table_name) const;
-    PoolBase<Connection>::Entry getConnection(const Cluster::ShardInfo & shard_info) const;
+    [[ maybe_unused ]]PoolBase<Connection>::Entry getConnection(const Cluster::ShardInfo & shard_info, const QualifiedTableName & table_name);
+    PoolBase<Connection>::Entry getConnection(const Cluster::ShardInfo & shard_info);
 
-    bool isUpToDate(const QualifiedTableName & table_name) const;
+    [[ maybe_unused ]]bool isUpToDate(const QualifiedTableName & table_name) const;
 
     void buildLocalPipelines(bool only_analyze = false);
     void sendFragments();
@@ -47,7 +47,8 @@ private:
     ContextMutablePtr context;
     String query;
 
-    const FragmentPtrs & fragments;
+    FragmentPtrs fragments;
+    FragmentPtr root_fragment;
     std::unordered_map<FragmentID, FragmentPtr> id_to_fragment;
 
     HostToFragments host_fragments;
@@ -58,6 +59,7 @@ private:
 
     // all destinations
     std::unordered_map<String, IConnectionPool::Entry> host_connection;
+    std::unordered_map<UInt32, String> shard_num_to_host;
 
     String local_host;
 

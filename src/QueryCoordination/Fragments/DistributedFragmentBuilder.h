@@ -14,7 +14,7 @@ public:
     {
     }
 
-    DistributedFragments build();
+    DistributedFragments build() const;
 
 private:
     const FragmentPtrs & all_fragments;

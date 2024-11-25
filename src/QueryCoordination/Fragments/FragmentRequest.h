@@ -1,13 +1,11 @@
 #pragma once
 
 #include <vector>
-#include <unorder>
+#include <IO/ReadBuffer.h>
+#include <IO/WriteBuffer.h>
 
 namespace DB
 {
-
-class ReadBuffer;
-class WriteBuffer;
 
 using Destinations = std::vector<String>;
 using Sources = std::unordered_map<UInt32, std::vector<String>>; // exchange id, Sources

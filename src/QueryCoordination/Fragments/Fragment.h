@@ -26,11 +26,11 @@ using FragmentPtrs = std::vector<FragmentPtr>;
  *    Scan       Scan
  *
  * Then we will have 3 fragments:
- *       Projection
+ *  1.     Projection          2. Scan      3. Scan
  *          |
  *         Join
  *        /    \
- *  Exchange   Exchange         Scan        Scan
+ *  Exchange   Exchange
  */
 class Fragment : public std::enable_shared_from_this<Fragment>
 {
@@ -63,7 +63,7 @@ public:
 
     explicit Fragment(const ContextMutablePtr & context_);
 
-    void setId(Int32 fragment_id_);
+    void setId(UInt32 id_);
     const Header & getOutputHeader() const;
 
     Node * getRoot() const;
@@ -80,7 +80,7 @@ public:
     const FragmentPtrs & getChildren() const;
     void addChild(const FragmentPtr & child);
 
-    UInt32 getFragmentID() const;
+    UInt32 getID() const;
 
     /// Whether a fragment has a destination(parent), if not, means it is the root fragment.
     bool hasDestFragment() const;
@@ -105,7 +105,7 @@ private:
     QueryPipelineBuilderPtr buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings, const BuildQueryPipelineSettings & build_pipeline_settings);
 
-    UInt32 fragment_id;
+    UInt32 id;
     UInt32 node_id_counter;
 
     Nodes nodes;

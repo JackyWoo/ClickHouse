@@ -20,13 +20,13 @@ extern const SettingsUInt64 max_block_size;
 }
 
 Fragment::Fragment(const ContextMutablePtr & context_)
-    : fragment_id(0), node_id_counter(0), root(nullptr), dest_exchange_node(nullptr), dest_fragment_id(0), context(context_)
+    : id(0), node_id_counter(0), root(nullptr), dest_exchange_node(nullptr), dest_fragment_id(0), context(context_)
 {
 }
 
-void Fragment::setId(Int32 fragment_id_)
+void Fragment::setId(UInt32 id_)
 {
-    fragment_id = fragment_id_;
+    id = id_;
 }
 
 const Header & Fragment::getOutputHeader() const
@@ -42,7 +42,7 @@ PlanNode * Fragment::getRoot() const
 void Fragment::setRoot(Fragment::Node * root_)
 {
     if (root)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Fragment {} already has a root {}", fragment_id, root->step->getName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Fragment {} already has a root {}", id, root->step->getName());
     chassert(root_ != nullptr);
     root = root_;
 }
@@ -73,9 +73,9 @@ UInt32 Fragment::addAndFetchNodeID()
     return ++node_id_counter;
 }
 
-UInt32 Fragment::getFragmentID() const
+UInt32 Fragment::getID() const
 {
-    return fragment_id;
+    return id;
 }
 
 UInt32 Fragment::getDestFragmentID() const
@@ -96,7 +96,7 @@ bool Fragment::hasDestFragment() const
 UInt32 Fragment::getDestExchangeID() const
 {
     if (!dest_exchange_node)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Fragment {} does not have parent", fragment_id);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Fragment {} does not have parent", id);
     return dest_exchange_node->id;
 }
 
@@ -303,7 +303,7 @@ explainStep(const IQueryPlanStep & step, IQueryPlanStep::FormatSettings & settin
 void Fragment::dumpPlan(WriteBufferFromOwnString & buffer, const ExplainFragmentOptions & options)
 {
     buffer.write('\n');
-    std::string str("Fragment " + std::to_string(fragment_id));
+    std::string str("Fragment " + std::to_string(id));
 
     if (dest_exchange_node)
     {
