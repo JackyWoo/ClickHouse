@@ -44,7 +44,7 @@ Pipelines PipelinesBuilder::build(bool only_analyze)
                     if (address.is_local)
                         local_host = address.toString();
 
-                    if (std::count(data_to.begin(), data_to.end(), address.toString()))
+                    if (std::ranges::count(data_to.begin(), data_to.end(), address.toString()))
                         target_host_port = address.toString();
                 }
 
