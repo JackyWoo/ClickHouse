@@ -83,6 +83,7 @@ QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const 
     settings.force_projection_name = settings.optimize_projection ? from[Setting::force_optimize_projection_name].value : "";
     settings.optimize_use_implicit_projections = settings.optimize_projection && from[Setting::optimize_use_implicit_projections];
 
+    settings.allow_experimental_query_coordination = from[Setting::allow_experimental_query_coordination];
     return settings;
 }
 

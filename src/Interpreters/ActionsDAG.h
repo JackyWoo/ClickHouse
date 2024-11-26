@@ -252,6 +252,7 @@ public:
 
     bool hasArrayJoin() const;
     bool hasStatefulFunctions() const;
+    bool hasInSubquery() const;
     bool trivial() const; /// If actions has no functions or array join.
     void assertDeterministic() const; /// Throw if not isDeterministic.
     bool hasNonDeterministic() const;

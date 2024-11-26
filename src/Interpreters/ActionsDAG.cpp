@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/materialize.h>
@@ -1405,6 +1406,22 @@ bool ActionsDAG::hasStatefulFunctions() const
         if (node.type == ActionType::FUNCTION && node.function_base->isStateful())
             return true;
 
+    return false;
+}
+
+bool ActionsDAG::hasInSubquery() const
+{
+    for (const auto & node : nodes)
+    {
+        if (node.type == ActionType::COLUMN)
+        {
+            if (const auto * set_column_ptr = dynamic_cast<const ColumnSet *>(node.column.get()))
+            {
+                if (dynamic_cast<const FutureSetFromSubquery *>(set_column_ptr->getData().get()))
+                    return true;
+            }
+        }
+    }
     return false;
 }
 

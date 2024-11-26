@@ -85,7 +85,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
                                 max_optimizations_to_apply);
 
             /// Try to apply optimization.
-            auto update_depth = optimization.apply(frame.node, nodes);
+            auto update_depth = optimization.apply(frame.node, nodes, settings.allow_experimental_query_coordination);
             if (update_depth)
                 ++total_applied_optimizations;
             max_update_depth = std::max<size_t>(max_update_depth, update_depth);

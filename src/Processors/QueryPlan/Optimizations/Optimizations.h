@@ -27,58 +27,58 @@ void addStepsToBuildSets(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::No
 /// It is not needed to remove old nodes from the list.
 struct Optimization
 {
-    using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &);
+    using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &, bool);
     const Function apply = nullptr;
     const char * name = "";
     const bool QueryPlanOptimizationSettings::* const is_enabled{};
 };
 
 /// Move ARRAY JOIN up if possible
-size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
+size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, bool /*enable_query_coordination*/);
 
 /// Move LimitStep down if possible
-size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &);
+size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &, bool /*enable_query_coordination*/);
 
 /// Split FilterStep into chain `ExpressionStep -> FilterStep`, where FilterStep contains minimal number of nodes.
-size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes);
+size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, bool /*enable_query_coordination*/);
 
 /// Replace chain `ExpressionStep -> ExpressionStep` to single ExpressionStep
 /// Replace chain `FilterStep -> ExpressionStep` to single FilterStep
-size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &);
+size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, bool /*enable_query_coordination*/);
 
 /// Replace chain `FilterStep -> FilterStep` to single FilterStep
 /// Note: this breaks short-circuit logic, so it is disabled for now.
-size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &);
+size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, bool /*enable_query_coordination*/);
 
 /// Move FilterStep down if possible.
 /// May split FilterStep and push down only part of it.
-size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
+size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, bool /*enable_query_coordination*/);
 
 /// Convert OUTER JOIN to INNER JOIN if filter after JOIN always filters default values
-size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
+size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, bool /*enable_query_coordination*/);
 
 /// Move ExpressionStep after SortingStep if possible.
 /// May split ExpressionStep and lift up only a part of it.
-size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
+size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, bool /*enable_query_coordination*/);
 
 /// Utilize storage sorting when sorting for window functions.
 /// Update information about prefix sort description in SortingStep.
-size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
+size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, bool /*enable_query_coordination*/);
 
 /// Remove redundant sorting
 void tryRemoveRedundantSorting(QueryPlan::Node * root);
 
 /// Remove redundant distinct steps
-size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
+size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, bool /*enable_query_coordination*/);
 
 /// Put some steps under union, so that plan optimization could be applied to union parts separately.
 /// For example, the plan can be rewritten like:
 ///                      - Something -                    - Expression - Something -
 /// - Expression - Union - Something -     =>     - Union - Expression - Something -
 ///                      - Something -                    - Expression - Something -
-size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
+size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, bool /*enable_query_coordination*/);
 
-size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::Nodes &);
+size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::Nodes &, bool /*enable_query_coordination*/);
 
 inline const auto & getOptimizations()
 {

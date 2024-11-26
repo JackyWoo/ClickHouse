@@ -80,6 +80,8 @@ struct QueryPlanOptimizationSettings
 
     bool build_sets = true;
 
+    bool allow_experimental_query_coordination = false;
+
     static QueryPlanOptimizationSettings fromSettings(const Settings & from);
     static QueryPlanOptimizationSettings fromContext(ContextPtr from);
 };

@@ -178,7 +178,7 @@ bool isPartitionKeySuitsGroupByKey(
 namespace DB::QueryPlanOptimizations
 {
 
-size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::Nodes &)
+size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::Nodes &, bool /*enable_query_coordination*/)
 {
     if (!node || node->children.size() != 1)
         return 0;

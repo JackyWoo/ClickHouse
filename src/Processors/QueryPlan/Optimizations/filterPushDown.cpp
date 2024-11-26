@@ -197,7 +197,7 @@ static size_t simplePushDownOverStep(QueryPlan::Node * parent_node, QueryPlan::N
     return 0;
 }
 
-static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlanStepPtr & child)
+static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlanStepPtr & child, bool enable_query_coordination)
 {
     auto & parent = parent_node->step;
     auto * filter = assert_cast<FilterStep *>(parent.get());
@@ -319,6 +319,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     Names left_stream_available_columns_to_push_down = get_available_columns_for_filter(true /*push_to_left_stream*/, left_stream_filter_push_down_input_columns_available);
     Names right_stream_available_columns_to_push_down = get_available_columns_for_filter(false /*push_to_left_stream*/, right_stream_filter_push_down_input_columns_available);
 
+    auto cloned_filter_headers = filter->getInputHeaders();
+    auto cloned_filter_expression = filter->getExpression().clone();
     auto join_filter_push_down_actions = filter->getExpression().splitActionsForJOINFilterPushDown(filter->getFilterColumnName(),
         filter->removesFilterColumn(),
         left_stream_available_columns_to_push_down,
@@ -331,7 +333,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
     size_t updated_steps = 0;
 
-    if (join_filter_push_down_actions.left_stream_filter_to_push_down)
+    if (join_filter_push_down_actions.left_stream_filter_to_push_down
+        /// skip push down filter with IN subquery when query coordination is enabled
+        && !(enable_query_coordination && join_filter_push_down_actions.left_stream_filter_to_push_down->hasInSubquery()))
     {
         const auto & result_name = join_filter_push_down_actions.left_stream_filter_to_push_down->getOutputs()[0]->result_name;
         updated_steps += addNewFilterStepOrThrow(parent_node,
@@ -346,7 +350,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             JoinKind::Left);
     }
 
-    if (join_filter_push_down_actions.right_stream_filter_to_push_down && allow_push_down_to_right)
+    if (join_filter_push_down_actions.right_stream_filter_to_push_down && allow_push_down_to_right
+        && !(enable_query_coordination && join_filter_push_down_actions.right_stream_filter_to_push_down->hasInSubquery()))
     {
         const auto & result_name = join_filter_push_down_actions.right_stream_filter_to_push_down->getOutputs()[0]->result_name;
         updated_steps += addNewFilterStepOrThrow(parent_node,
@@ -387,11 +392,16 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             filter->updateInputHeader(child->getOutputHeader());
         }
     }
+    else
+    {
+        /// restore filter if it was not pushed down
+        parent_node->step = std::make_unique<FilterStep>(std::move(cloned_filter_headers[0]), std::move(cloned_filter_expression), filter->getFilterColumnName(), filter->removesFilterColumn());
+    }
 
     return updated_steps;
 }
 
-size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
+size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, bool enable_query_coordination)
 {
     if (parent_node->children.size() != 1)
         return 0;
@@ -410,6 +420,10 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * aggregating = typeid_cast<AggregatingStep *>(child.get()))
     {
+        /// we can not push filter with IN subquery down to AggregatingStep when query coordination is enabled
+        if (enable_query_coordination && filter->getExpression().hasInSubquery())
+            return 0;
+
         /// If aggregating is GROUPING SETS, and not all the identifiers exist in all
         /// of the grouping sets, we could not push the filter down.
         if (aggregating->isGroupingSets())
@@ -524,7 +538,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (auto updated_steps = simplePushDownOverStep<DistinctStep>(parent_node, nodes, child))
         return updated_steps;
 
-    if (auto updated_steps = tryPushDownOverJoinStep(parent_node, nodes, child))
+    if (auto updated_steps = tryPushDownOverJoinStep(parent_node, nodes, child, enable_query_coordination))
         return updated_steps;
 
     /// TODO.
