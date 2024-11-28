@@ -640,6 +640,12 @@ std::shared_ptr<MergingAggregatedStep> AggregatingStep::makeMergingAggregatedSte
         settings[Setting::max_block_size],
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization]);
 
+    /// should_produce_results_in_order_of_bucket_number shold be true only if
+    /// 1. QueryProcessingStage is WithMergeableState
+    /// 2. and (settings[Setting::distributed_aggregation_memory_efficient] || settings[Setting::enable_memory_bound_merging_of_aggregation_results])
+    /// but for query coordination the QueryProcessingStage will never be WithMergeableState
+    auto should_produce_results_in_order_of_bucket_number_ = false;
+
     auto merging_step = std::make_shared<MergingAggregatedStep>(
         input_header_,
         params_,
@@ -649,7 +655,7 @@ std::shared_ptr<MergingAggregatedStep> AggregatingStep::makeMergingAggregatedSte
         settings[Setting::distributed_aggregation_memory_efficient] && grouping_sets_params.empty(),
         settings[Setting::max_threads],
         settings[Setting::aggregation_memory_efficient_merge_threads],
-        (settings[Setting::distributed_aggregation_memory_efficient] || settings[Setting::enable_memory_bound_merging_of_aggregation_results]),
+        should_produce_results_in_order_of_bucket_number_,
         settings[Setting::max_block_size],
         settings[Setting::aggregation_in_order_max_block_bytes],
         settings[Setting::enable_memory_bound_merging_of_aggregation_results]);
