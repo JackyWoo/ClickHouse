@@ -173,16 +173,9 @@ void FragmentPipelinesExecutor::cancel()
 
 void FragmentPipelinesExecutor::cancelReading()
 {
-    /// TODO implement
-    //    if (!data)
-    //        return;
-    //
-    //    /// Stop reading from source if pipeline wasn't finished.
-    //    cancelWithExceptionHandling([&]()
-    //    {
-    //        if (!data->is_finished && data->executor)
-    //            data->executor->cancelReading();
-    //    });
+    /// Stop reading from source if pipeline wasn't finished.
+    LOG_DEBUG(log, "cancelReading"); /// TODO implement this
+    cancel();
 }
 
 void FragmentPipelinesExecutor::cancelWithExceptionHandling(CancelFunc && cancel_func)
@@ -436,7 +429,7 @@ void NonRootPipelinesExecutor::execute()
     datas->rethrowFirstExceptionIfHas();
 }
 
-void NonRootPipelinesExecutor::waitFinish()
+void NonRootPipelinesExecutor::waitFinish() const
 {
     datas->finish_event.wait();
 }

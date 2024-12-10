@@ -68,7 +68,7 @@ private:
 
     bool was_begin_sent = false;
 
-    DB::ColumnNumbers keys_positions;
+    ColumnNumbers keys_positions;
 };
 
 }

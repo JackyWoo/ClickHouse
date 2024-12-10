@@ -47,7 +47,7 @@ void FragmentPipelines::assignThreadNum(size_t max_threads)
 }
 
 FragmentPipelinesExecutorPtr
-FragmentPipelines::createCoordinationExecutor(QueryPipeline & root_pipeline_, const StorageLimitsList & storage_limits_, size_t interactive_timeout_ms)
+FragmentPipelines::createFragmentPipelinesExecutor(QueryPipeline & root_pipeline_, const StorageLimitsList & storage_limits_, size_t interactive_timeout_ms)
 {
     chassert(!non_root_pipelines.empty());
     std::vector<UInt32> fragment_ids;
@@ -91,9 +91,9 @@ void FragmentPipelines::addRootPipeline(UInt32 fragment_id, QueryPipeline root_p
     root_pipeline = {.fragment_id = fragment_id, .pipeline = std::move(root_pipeline_)};
 }
 
-void FragmentPipelines::addSourcesPipeline(UInt32 fragment_id, QueryPipeline source_pipeline)
+void FragmentPipelines::addNonRootPipeline(UInt32 fragment_id, QueryPipeline non_root_pipeline)
 {
-    non_root_pipelines.emplace_back(fragment_id, std::move(source_pipeline));
+    non_root_pipelines.emplace_back(fragment_id, std::move(non_root_pipeline));
 }
 
 }

@@ -104,7 +104,7 @@ FragmentPipelines FragmentPipelinesBuilder::build(bool only_analyze)
         if (!fragment->hasDestFragment())
             pipelines.addRootPipeline(fragment->getID(), std::move(pipeline));
         else
-            pipelines.addSourcesPipeline(fragment->getID(), std::move(pipeline));
+            pipelines.addNonRootPipeline(fragment->getID(), std::move(pipeline));
     }
 
     pipelines.assignThreadNum(settings[Setting::max_threads]);

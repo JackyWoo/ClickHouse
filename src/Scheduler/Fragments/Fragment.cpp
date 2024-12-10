@@ -181,7 +181,6 @@ QueryPipelineBuilderPtr Fragment::buildQueryPipeline(
         if (next_child == frame.node->children.size()) /// children belong next fragment
         {
             last_pipeline = frame.node->step->updatePipeline(std::move(frame.pipelines), build_pipeline_settings);
-
             stack.pop();
         }
         else

@@ -5,7 +5,6 @@
 #include <mutex>
 
 #include <Core/Block.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/Transforms/AggregatingTransform.h>

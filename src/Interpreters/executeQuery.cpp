@@ -1761,7 +1761,7 @@ void executeQuery(
         {
             if (context->isDistributedForQueryCoord())
             {
-                auto executor = streams.scheduling_state.pipelines.createCoordinationExecutor(
+                auto executor = streams.scheduling_state.pipelines.createFragmentPipelinesExecutor(
                     pipeline, streams.scheduling_state.storage_limits, context->getSettingsRef()[Setting::interactive_delay] / 1000);
 
                 auto remote_pipelines_manager = executor->getRemoteExecutorsManager();

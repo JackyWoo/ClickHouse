@@ -34,7 +34,6 @@ void RemoteExecutorsManager::receiveReportFromRemoteServers(ThreadGroupPtr threa
             {
                 if (node.is_finished)
                     continue;
-
                 auto packet = node.connection->receivePacket();
                 processPacket(packet, node);
             }

@@ -30,13 +30,13 @@ public:
 
     /// Create executor for the initial server which will contain a root executor and some non-root executors.
     FragmentPipelinesExecutorPtr
-    createCoordinationExecutor(QueryPipeline & root_pipeline_, const StorageLimitsList & storage_limits_, size_t interactive_timeout_ms);
+    createFragmentPipelinesExecutor(QueryPipeline & root_pipeline_, const StorageLimitsList & storage_limits_, size_t interactive_timeout_ms);
 
     /// Create executor for the non-initial server which will only contain some non-root executors.
     NonRootPipelinesExecutorPtr createNonRootPipelinesExecutor();
 
     void addRootPipeline(UInt32 fragment_id, QueryPipeline root_pipeline_);
-    void addSourcesPipeline(UInt32 fragment_id, QueryPipeline source_pipeline);
+    void addNonRootPipeline(UInt32 fragment_id, QueryPipeline non_root_pipeline);
 
 private:
     /// pipeline for the root fragment, will be detached
