@@ -67,8 +67,12 @@ void FragmentScheduler::schedule()
     buildLocalPipelines();
 
     /// TODO multi-threads?
+    Stopwatch watch;
     sendFragments();
+    LOG_DEBUG(log, "Send fragments to remote hosts, elapsed {}ms", watch.elapsed() / 1000);
+    watch.restart();
     sendBeginExecutePipelines();
+    LOG_DEBUG(log, "Send begin execute pipelines to remote hosts, elapsed {}ms", watch.elapsed() / 1000);
 }
 
 FragmentPipelines && FragmentScheduler::extractPipelines()
