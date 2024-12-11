@@ -4,27 +4,51 @@
 namespace DB
 {
 
+void ExchangeDataSource::receive(Block block)
+{
+    {
+        std::unique_lock lk(mutex);
+        block_list.push_back(std::move(block));
+    }
+    cv.notify_one();
+}
+
+void ExchangeDataSource::receive(std::exception_ptr exception)
+{
+    {
+        std::unique_lock lk(mutex);
+        receive_data_exception = exception;
+    }
+    cv.notify_one();
+}
+
 IProcessor::Status ExchangeDataSource::prepare()
 {
     return ISource::prepare();
 }
 
-/// Stop reading from stream if output port is finished.
 void ExchangeDataSource::onUpdatePorts()
 {
-}
-
-void ExchangeDataSource::setStorageLimits(const std::shared_ptr<const StorageLimitsList> & /*storage_limits_*/)
-{
+    /// We do not need more data commonly because of limit and we should cancel the sources.
+    if (getPort().isFinished())
+    {
+        /// TODO cancel the source
+    }
 }
 
 std::optional<Chunk> ExchangeDataSource::tryGenerate()
 {
+    if (isCancelled())
+        return {};
+
     std::unique_lock lk(mutex);
     cv.wait(lk, [this] { return !block_list.empty() || finished || isCancelled() || receive_data_exception; });
 
     if (unlikely(receive_data_exception))
         std::rethrow_exception(receive_data_exception);
+
+    if (block_list.empty())
+        return {};
 
     Block block = std::move(block_list.front());
     block_list.pop_front();
@@ -32,15 +56,16 @@ std::optional<Chunk> ExchangeDataSource::tryGenerate()
     if (!block)
     {
         LOG_DEBUG(
-            &Poco::Logger::get("ExchangeDataSource"),
+            log,
             "Fragment {} exchange id {} receive empty block from {}",
             fragment_id,
             plan_id,
             source);
+        /// TODO cancel the source
         return {};
     }
 
-    /// E.g select count() from distribute_table where name='a'
+    /// E.g select count() from t1 where col='some_value'
     /// Filter has empty header. ExchangeData has empty header. But there is real data, we construct a fake header.
     size_t rows;
     if (unlikely(!getPort().getHeader()))
@@ -52,7 +77,7 @@ std::optional<Chunk> ExchangeDataSource::tryGenerate()
         rows = block.rows();
 
     LOG_TRACE(
-        &Poco::Logger::get("ExchangeDataSource"),
+        log,
         "Fragment {} exchange id {} receive {} rows from {} bucket_num {}",
         fragment_id,
         plan_id,
@@ -76,8 +101,11 @@ std::optional<Chunk> ExchangeDataSource::tryGenerate()
 
 void ExchangeDataSource::onCancel() noexcept
 {
-    LOG_DEBUG(&Poco::Logger::get("ExchangeDataSource"), "Fragment {} exchange id {} on cancel", fragment_id, plan_id);
+    LOG_DEBUG(log, "Fragment {} exchange id {} on cancel", fragment_id, plan_id);
     receive(Block());
+
+    // TODO cancel the source
+    query_id;
 }
 
 }

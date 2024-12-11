@@ -598,11 +598,12 @@ void TCPHandler::runImpl()
             /// Processing Query
             std::tie(state.parsed_query, state.io) = executeQuery(state.query, query_context, QueryFlags{}, state.stage);
 
-            /// For query coordination
-            /// SECONDARY_QUERY fragments_request parse fragments and add it to FragmentMgr, it's job finished.
-            if (state.fragments_request && query_context->isDistributedForQueryCoord()
-                && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+            /// For query coordination, the non-initial node will parse query to plan fragments and then wait the BeginExecutePipelines packet.
+            if (state.fragments_request)
             {
+                chassert(query_context->isDistributedForQueryCoord());
+                chassert(query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY);
+
                 auto specified_cluster = query_context->getClusters().find(query_context->getDistributedTablesInfo().cluster_name)->second;
                 state.io.scheduling_state.pipelines = fragmentsToPipelines(
                     state.io.scheduling_state.fragments,
@@ -1123,20 +1124,16 @@ void TCPHandler::processInsertQuery()
 
 void TCPHandler::processOrdinaryQueryWithCoordination()
 {
-    bool initial_query_coordination = query_context->isDistributedForQueryCoord()
-        && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
+    chassert(query_kind != ClientInfo::QueryKind::NO_QUERY);
 
-    bool secondary_query_coordination = query_context->isDistributedForQueryCoord()
-        && query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-
-    if (secondary_query_coordination)
+    if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         {
             const auto non_root_executor = state.io.scheduling_state.pipelines.createNonRootPipelinesExecutor();
 
             auto callback = [this]()
             {
-                std::scoped_lock lock(task_callback_mutex);
+                std::scoped_lock lock(out_mutex, task_callback_mutex);
 
                 if (getQueryCancellationStatus() == CancellationStatus::FULLY_CANCELLED)
                     return true;
@@ -1152,7 +1149,7 @@ void TCPHandler::processOrdinaryQueryWithCoordination()
             non_root_executor->execute();
         }
 
-        std::lock_guard lock(task_callback_mutex);
+        std::lock_guard lock(out_mutex);
 
         /// Send final progress after calling onFinish(), since it will update the progress.
         ///
@@ -1162,12 +1159,12 @@ void TCPHandler::processOrdinaryQueryWithCoordination()
         sendProgress();
         sendSelectProfileEvents();
     }
-    else if (initial_query_coordination)
+    else if (query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
         auto & pipeline = state.io.pipeline;
 
         {
-            std::lock_guard lock(task_callback_mutex);
+            std::lock_guard lock(out_mutex);
             sendPartUUIDs();
         }
 
@@ -1177,13 +1174,13 @@ void TCPHandler::processOrdinaryQueryWithCoordination()
 
             if (header)
             {
-                std::lock_guard lock(task_callback_mutex);
+                std::lock_guard lock(out_mutex);
                 sendData(header);
             }
         }
 
         /// Defer locking to cover a part of the scope below and everything after it
-        std::unique_lock progress_lock(task_callback_mutex, std::defer_lock);
+        std::unique_lock out_lock(out_mutex, std::defer_lock);
 
         {
             auto executor
@@ -1195,6 +1192,17 @@ void TCPHandler::processOrdinaryQueryWithCoordination()
                 [this](const Progress & value) { this->updateProgress(value); }, query_context->getProcessListElement());
 
             CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
+
+            /// The following may happen:
+            /// * current thread is holding the lock
+            /// * because of the exception we unwind the stack and call the destructor of `executor`
+            /// * the destructor calls cancel() and waits for all query threads to finish
+            /// * at the same time one of the query threads is trying to acquire the lock, e.g. inside `merge_tree_read_task_callback`
+            /// * deadlock
+            SCOPE_EXIT({
+                if (out_lock.owns_lock())
+                    out_lock.unlock();
+            });
 
             Block block;
             while (executor->pull(block, interactive_delay / 1000))
@@ -1216,6 +1224,9 @@ void TCPHandler::processOrdinaryQueryWithCoordination()
                     executor->cancelReading();
                 }
 
+                lock.unlock();
+                out_lock.lock();
+
                 if (after_send_progress.elapsed() / 1000 >= interactive_delay)
                 {
                     /// Some time passed and there is a progress.
@@ -1231,12 +1242,14 @@ void TCPHandler::processOrdinaryQueryWithCoordination()
                     if (!state.io.null_format)
                         sendData(block);
                 }
+
+                out_lock.unlock();
             }
 
             /// This lock wasn't acquired before and we make .lock() call here
             /// so everything under this line is covered even together
             /// with sendProgress() out of the scope
-            progress_lock.lock();
+            out_lock.lock();
 
             /** If data has run out, we will send the profiling data and total values to
           * the last zero block to be able to use
@@ -1262,6 +1275,7 @@ void TCPHandler::processOrdinaryQueryWithCoordination()
             last_sent_snapshots.clear();
         }
 
+        out_lock.lock();
         sendProgress();
     }
 }
@@ -1897,13 +1911,14 @@ bool TCPHandler::receiveBeginExecutePipelines()
     readVarUInt(packet_type, *in);
     if (packet_type != Protocol::Client::BeginExecutePipelines)
     {
-        throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet BeginExecutePipelines received from client");
+        throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Expect packet BeginExecutePipelines but received {} from client",
+            Protocol::Client::toString(packet_type));
     }
 
     String query_id;
     readStringBinary(query_id, *in);
 
-    LOG_DEBUG(log, "Receive BeginExecutePipelines packet for query {}", query_id);
+    LOG_DEBUG(log, "Received BeginExecutePipelines for query {}", query_id);
 
     state.query_id = query_id;
     return true;
@@ -2016,8 +2031,6 @@ bool TCPHandler::receivePacket()
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown packet {} from client", toString(packet_type));
     }
 }
-
-
 void TCPHandler::receiveIgnoredPartUUIDs()
 {
     readVectorBinary(state.part_uuids_to_ignore.emplace(), *in);
@@ -2342,46 +2355,30 @@ bool TCPHandler::receiveExchangeData()
 
     ExchangeDataRequest exchange_data_request;
     exchange_data_request.read(*in);
+
+    LOG_DEBUG(log, "Received exchange data request {}", exchange_data_request.toString());
     state.exchange_data_request.emplace(exchange_data_request);
-
-    LOG_DEBUG(log, "Read exchange data request {}", state.exchange_data_request->toString());
-
-    /// TODO ThreadGroup
-    //            std::optional<CurrentThread::QueryScope> query_scope;
-    //
-    //            auto context = FragmentMgr::getInstance().findQueryContext(state.exchange_data_request->query_id);
-    //
-    //            query_scope.emplace(context, /* fatal_error_callback */ [this]
-    //            {
-    //                std::lock_guard lock(fatal_error_mutex);
-    //                sendLogs();
-    //            });
 
     UInt64 compression = 0;
     readVarUInt(compression, *in);
     state.compression = static_cast<Protocol::Compression>(compression);
     last_block_in.compression = state.compression;
 
-    LOG_DEBUG(log, "Read compression");
-
     state.exchange_data_receiver = ExchangeManager::getInstance().findExchangeDataSource(*state.exchange_data_request);
     state.exchange_data_header = state.exchange_data_receiver->getHeader();
 
-    LOG_DEBUG(log, "Found exchange data receiver");
-
-    /// read exchange data
     try
     {
+        /// read exchange data
         readData();
     }
     catch (...)
     {
-        tryLogCurrentException(log, "Error while read exchange data");
+        tryLogCurrentException(log, "Error while receiving exchange data");
         state.exchange_data_receiver->receive(std::current_exception());
     }
 
-    LOG_DEBUG(log, "Read exchange data done");
-
+    LOG_DEBUG(log, "Received all exchange data");
     return false;
 }
 

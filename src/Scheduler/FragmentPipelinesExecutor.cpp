@@ -94,7 +94,6 @@ bool FragmentPipelinesExecutor::pull(Block & block, uint64_t milliseconds)
         }
         has_begun = true;
     }
-
     rethrowExceptionIfHas();
 
     bool is_execution_finished = !tcp_root_executor->pull(block, milliseconds);
@@ -134,7 +133,7 @@ void FragmentPipelinesExecutor::execute()
 
 void FragmentPipelinesExecutor::cancel()
 {
-    LOG_DEBUG(log, "cancel");
+    LOG_DEBUG(log, "canceling fragment pipelines executor");
 
     /// Cancel execution if it wasn't finished.
     cancelWithExceptionHandling(
@@ -252,6 +251,7 @@ struct NonRootPipelinesExecutor::Data
     std::atomic_bool is_finished{false};
     std::atomic_bool has_exception{false};
     ThreadFromGlobalPool thread;
+    /// notify waitFinish
     std::function<void()> finish_callback;
 
     Data() = default;
@@ -269,7 +269,6 @@ struct NonRootPipelinesExecutor::Datas
     std::vector<std::shared_ptr<Data>> datas;
 
     Poco::Event finish_event{false};
-
     std::mutex mutex;
 
     void finishCallBack()
@@ -290,39 +289,58 @@ struct NonRootPipelinesExecutor::Datas
     void cancel() const
     {
         for (const auto & data : datas)
+        {
             if (!data->is_finished && data->executor)
-                data->executor->cancel(); /// TODO if finished call cancel() will hang?
+            {
+                try
+                {
+                    data->executor->cancel();
+                }
+                catch (...)
+                {
+                    if (!data->has_exception)
+                    {
+                        data->exception = std::current_exception();
+                        data->has_exception = true;
+                    }
+                }
+                data->is_finished = true;
+            }
+        }
     }
 
     void join() const
     {
         for (const auto & data : datas)
-            if (!data->is_finished && data->thread.joinable())
+        {
+            if (data->thread.joinable())
                 data->thread.join();
+        }
     }
 
     size_t size() const { return datas.size(); }
 
     void rethrowFirstExceptionIfHas() const
     {
-        for (auto & data : datas)
+        for (const auto & data : datas)
+        {
             if (data->has_exception)
                 std::rethrow_exception(data->exception);
+        }
     }
 };
 
 static void threadFunction(NonRootPipelinesExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads, Poco::Logger * log)
 {
     SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
-    setThreadName("QCompPipesEx"); /// TODO bytes > 15 can be used test query cancel
+    setThreadName("QCompPipesEx"); /// TODO bytes > 15 can be used to test query cancel
 
     try
     {
         if (thread_group)
             CurrentThread::attachToGroup(thread_group);
 
-        LOG_DEBUG(log, "Fragment {} begin execute", data.fragment_id);
-
+        LOG_DEBUG(log, "Fragment {} begin to execute", data.fragment_id);
         data.executor->execute(num_threads, true);
     }
     catch (...)
@@ -373,7 +391,6 @@ void NonRootPipelinesExecutor::asyncExecute()
     };
 
     thread = ThreadFromGlobalPool(std::move(func));
-
     datas_init.wait(); /// avoid data thread join before data thread init
 }
 
@@ -416,7 +433,7 @@ void NonRootPipelinesExecutor::execute()
 
             if (cancel_callback())
             {
-                LOG_DEBUG(log, "is_cancelled_callback try cancel");
+                LOG_DEBUG(log, "canceling");
                 cancel();
             }
         }
@@ -439,7 +456,7 @@ void NonRootPipelinesExecutor::cancel()
     if (cancelled)
         return;
 
-    LOG_DEBUG(log, "canceling");
+    LOG_DEBUG(log, "canceling non root pipelines executor");
 
     cancelled = true;
 
@@ -455,7 +472,7 @@ void NonRootPipelinesExecutor::cancel()
     if (thread.joinable())
         thread.join();
 
-    LOG_DEBUG(log, "cancelled");
+    LOG_DEBUG(log, "cancelled non root pipelines executor");
 }
 
 NonRootPipelinesExecutor::~NonRootPipelinesExecutor()

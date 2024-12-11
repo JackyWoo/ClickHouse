@@ -125,12 +125,16 @@ struct QueryState
     /// Timeouts setter for current query
     std::unique_ptr<TimeoutSetter> timeout_setter;
 
-    /// for query coordination
+    /// For query coordination when scheduling, if fragments_request is not blank:
+    ///     1. query coordination is enabled
+    ///     2. this is the secondary stage of the query
     std::optional<FragmentsRequest> fragments_request;
+
+    /// For query coordination when exchanging data
     std::optional<ExchangeDataRequest> exchange_data_request;
     std::shared_ptr<ExchangeDataSource> exchange_data_receiver;
 
-    /// sample block from ExchangeData
+    /// Sample block for exchanging data
     Block exchange_data_header;
 
     void reset()

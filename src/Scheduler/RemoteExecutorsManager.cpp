@@ -56,30 +56,25 @@ void RemoteExecutorsManager::processPacket(Packet & packet, ManagedNode & node) 
     switch (packet.type)
     {
         case Protocol::Server::ProfileInfo: {
+            LOG_TRACE(log, "Got ProfileInfo {}", node.host_port);
             if (profile_info_callback)
                 profile_info_callback(packet.profile_info);
             break;
         }
         case Protocol::Server::Log: {
+            LOG_TRACE(log, "Got Log {}", node.host_port);
             /// Pass logs from remote server to client
             if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
                 log_queue->pushBlock(std::move(packet.block));
             break;
         }
         case Protocol::Server::Progress: {
-            /// update progress
+            LOG_TRACE(log, "Got Progress {}", node.host_port);
             if (read_progress_callback)
             {
                 LOG_DEBUG(log, "{} update progress read_rows {}", node.host_port, packet.progress.read_rows);
-                LOG_DEBUG(log, "{} update progress read_bytes {}", node.host_port, packet.progress.read_bytes);
-                LOG_DEBUG(log, "{} update progress total_rows_to_read {}", node.host_port, packet.progress.total_rows_to_read);
-                LOG_DEBUG(log, "{} update progress total_bytes_to_read {}", node.host_port, packet.progress.total_bytes_to_read);
-                LOG_DEBUG(log, "{} update progress written_rows {}", node.host_port, packet.progress.written_rows);
-                LOG_DEBUG(log, "{} update progress written_bytes {}", node.host_port, packet.progress.written_bytes);
-                LOG_DEBUG(log, "{} update progress result_rows {}", node.host_port, packet.progress.result_rows);
-                LOG_DEBUG(log, "{} update progress result_bytes {}", node.host_port, packet.progress.result_bytes);
                 LOG_DEBUG(log, "{} update progress elapsed_ns {}", node.host_port, packet.progress.elapsed_ns);
-                
+
                 if (packet.progress.total_rows_to_read)
                     read_progress_callback->addTotalRowsApprox(packet.progress.total_rows_to_read);
 
@@ -89,7 +84,7 @@ void RemoteExecutorsManager::processPacket(Packet & packet, ManagedNode & node) 
             break;
         }
         case Protocol::Server::ProfileEvents: {
-            LOG_DEBUG(log, "{} sending profile events", node.host_port);
+            LOG_TRACE(log, "Got ProfileEvents from {}", node.host_port);
             /// Pass profile events from remote server to client
             if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
                 if (!profile_queue->emplace(std::move(packet.block)))
@@ -97,13 +92,13 @@ void RemoteExecutorsManager::processPacket(Packet & packet, ManagedNode & node) 
             break;
         }
         case Protocol::Server::Exception: {
-            LOG_DEBUG(log, "{} sending exception", node.host_port);
-            packet.exception->rethrow();
+            LOG_TRACE(log, "Got exception from {}", node.host_port); // TODO we should send cancel to it?
+            exception_callback(std::make_exception_ptr(*packet.exception));
             break;
         }
         case Protocol::Server::EndOfStream: {
+            LOG_TRACE(log, "Got EndOfStream from {}", node.host_port);
             node.is_finished = true;
-            LOG_DEBUG(log, "{} is finished", node.host_port);
             break;
         }
 
@@ -157,15 +152,18 @@ void RemoteExecutorsManager::cancel()
                 processPacket(packet, node);
             }
 
-            if (!node.is_finished)
-                node.connection->sendCancel();
-
-            /// wait EndOfStream or Exception
-            Packet packet;
-            while (!node.is_finished && !packet.exception)
+            if (!node.is_finished || node.connection->isConnected())
             {
-                packet = node.connection->receivePacket();
-                processPacket(packet, node);
+                LOG_DEBUG(log, "sending cancellation to {}", node.host_port);
+                node.connection->sendCancel(); // TODO if failed to send we should continue to drain
+
+                /// wait EndOfStream or Exception
+                Packet packet;
+                while (!node.is_finished || !packet.exception)
+                {
+                    packet = node.connection->receivePacket();
+                    processPacket(packet, node);
+                }
             }
         }
 
