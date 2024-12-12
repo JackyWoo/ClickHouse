@@ -1471,7 +1471,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     execute_implicit_tcl_query(context, ASTTransactionControl::COMMIT);
 
                 if (context->isDistributedForQueryCoord())
+                {
                     ExchangeManager::getInstance().removeExchangeDataSources(elem.client_info.current_query_id);
+                    RemoteExecutorsManagerContainer::getInstance().remove(elem.client_info.current_query_id);
+                }
             };
 
             auto exception_callback =
@@ -1489,7 +1492,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 logQueryException(elem, context, start_watch, ast, query_span, internal, log_error);
 
                 if (context->isDistributedForQueryCoord())
+                {
                     ExchangeManager::getInstance().removeExchangeDataSources(elem.client_info.current_query_id);
+                    RemoteExecutorsManagerContainer::getInstance().remove(elem.client_info.current_query_id);
+                }
             };
 
             res.finish_callback = std::move(finish_callback);
@@ -1761,7 +1767,7 @@ void executeQuery(
         {
             if (context->isDistributedForQueryCoord())
             {
-                auto executor = streams.scheduling_state.pipelines.createFragmentPipelinesExecutor(
+                auto executor = streams.scheduling_state.pipelines.createFragmentPipelinesExecutor(context->getClientInfo().current_query_id,
                     pipeline, streams.scheduling_state.storage_limits, context->getSettingsRef()[Setting::interactive_delay] / 1000);
 
                 auto remote_pipelines_manager = executor->getRemoteExecutorsManager();

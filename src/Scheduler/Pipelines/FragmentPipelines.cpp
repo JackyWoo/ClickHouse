@@ -47,7 +47,7 @@ void FragmentPipelines::assignThreadNum(size_t max_threads)
 }
 
 FragmentPipelinesExecutorPtr
-FragmentPipelines::createFragmentPipelinesExecutor(QueryPipeline & root_pipeline_, const StorageLimitsList & storage_limits_, size_t interactive_timeout_ms)
+FragmentPipelines::createFragmentPipelinesExecutor(const String & query_id, QueryPipeline & root_pipeline_, const StorageLimitsList & storage_limits_, size_t interactive_timeout_ms)
 {
     chassert(!non_root_pipelines.empty());
     std::vector<UInt32> fragment_ids;
@@ -59,7 +59,8 @@ FragmentPipelines::createFragmentPipelinesExecutor(QueryPipeline & root_pipeline
     }
 
     auto non_root_executor = std::make_shared<NonRootPipelinesExecutor>(pipelines, fragment_ids);
-    auto remote_pipelines_manager = std::make_shared<RemoteExecutorsManager>(storage_limits_);
+    auto remote_pipelines_manager = std::make_shared<RemoteExecutorsManager>(query_id, storage_limits_);
+    RemoteExecutorsManagerContainer::getInstance().add(query_id, remote_pipelines_manager);
     /// TODO set nodes
 
     if (root_pipeline_.pulling())

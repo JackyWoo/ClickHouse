@@ -30,7 +30,7 @@ public:
 
     /// Create executor for the initial server which will contain a root executor and some non-root executors.
     FragmentPipelinesExecutorPtr
-    createFragmentPipelinesExecutor(QueryPipeline & root_pipeline_, const StorageLimitsList & storage_limits_, size_t interactive_timeout_ms);
+    createFragmentPipelinesExecutor(const String & query_id, QueryPipeline & root_pipeline_, const StorageLimitsList & storage_limits_, size_t interactive_timeout_ms);
 
     /// Create executor for the non-initial server which will only contain some non-root executors.
     NonRootPipelinesExecutorPtr createNonRootPipelinesExecutor();

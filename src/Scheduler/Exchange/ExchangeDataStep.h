@@ -11,6 +11,7 @@ class ExchangeDataStep final : public ISourceStep
 {
 public:
     ExchangeDataStep(
+        const String & query_id_,
         const Header & output_header_,
         size_t max_block_size_,
         const Distribution & distribution_,
@@ -18,6 +19,7 @@ public:
         bool exchange_sink_merge = false,
         bool exchange_source_merge = false)
         : ISourceStep(output_header_)
+        , query_id(query_id_)
         , max_block_size(max_block_size_)
         , distribution(distribution_)
         , sorting(sorting_)
@@ -48,6 +50,7 @@ public:
     bool sinkMerge() const { return sink_merge; }
 
 private:
+    String query_id;
     UInt32 fragment_id;
     UInt32 plan_id;
 

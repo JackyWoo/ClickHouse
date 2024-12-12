@@ -18,13 +18,14 @@ using ExchangeDataSourcePtr = std::shared_ptr<ExchangeDataSource>;
 class ExchangeDataSource final : public ISource, public std::enable_shared_from_this<ExchangeDataSource>
 {
 public:
-    ExchangeDataSource(const Header & output_header_, UInt32 fragment_id_, UInt32 plan_id_, const String & source_)
+    ExchangeDataSource(const String & query_id_, const Header & output_header_, UInt32 fragment_id_, UInt32 plan_id_, const String & source_)
         : ISource(output_header_, false)
+        , query_id(query_id_)
         , fragment_id(fragment_id_)
         , plan_id(plan_id_)
         , source(source_)
         , add_aggregation_info(true)
-        , log(&Poco::Logger::get("ExchangeDataSource(" + source_ + ")"))
+        , log(&Poco::Logger::get("ExchangeDataSource(#" + std::to_string(fragment_id) + "#" + std::to_string(plan_id) + "-" + source_ + ")"))
     {
     }
 
@@ -34,6 +35,8 @@ public:
     void receive(std::exception_ptr exception);
 
     Status prepare() override;
+    void work() override;
+
     String getName() const override { return "ExchangeDataSource"; }
 
     void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr /*counter*/) override { }
@@ -52,11 +55,14 @@ protected:
     void onCancel() noexcept override;
 
 private:
+    void cancelRemote() const;
+
     std::condition_variable cv;
     std::mutex mutex;
 
     BlocksList block_list;
 
+    String query_id;
     UInt32 fragment_id;
     UInt32 plan_id;
 
@@ -64,6 +70,9 @@ private:
 
     bool add_aggregation_info;
     size_t num_rows = 0;
+
+    bool need_drain = false;
+    bool executor_finished = false;
 
     // bool is_async_state = false;
 

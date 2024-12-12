@@ -256,6 +256,7 @@ Cost OptimizeInputs::enforceGroupNode(const PhysicalProperty & required_prop, co
 
     size_t max_block_size = task_context->getQueryContext()->getSettingsRef()[Setting::max_block_size];
     auto exchange_step = std::make_shared<ExchangeDataStep>(
+        task_context->getQueryContext()->getCurrentQueryId(),
         group_node->getStep()->getOutputHeader(),
         max_block_size,
         required_prop.distribution,

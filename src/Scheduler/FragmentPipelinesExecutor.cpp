@@ -84,13 +84,13 @@ bool FragmentPipelinesExecutor::pull(Block & block, uint64_t milliseconds)
         if (non_root_executor)
         {
             non_root_executor->setExceptionCallback(exception_callback);
-            non_root_executor->asyncExecute();
+            non_root_executor->executeAsync();
         }
 
         if (remote_executors_manager)
         {
             remote_executors_manager->setExceptionCallback(exception_callback);
-            remote_executors_manager->asyncReceiveReports();
+            remote_executors_manager->receiveReportsAsync();
         }
         has_begun = true;
     }
@@ -118,13 +118,13 @@ void FragmentPipelinesExecutor::execute()
     if (non_root_executor)
     {
         non_root_executor->setExceptionCallback(exception_callback);
-        non_root_executor->asyncExecute();
+        non_root_executor->executeAsync();
     }
 
     if (remote_executors_manager)
     {
         remote_executors_manager->setExceptionCallback(exception_callback);
-        remote_executors_manager->asyncReceiveReports();
+        remote_executors_manager->receiveReportsAsync();
     }
 
     rethrowExceptionIfHas();
@@ -369,7 +369,7 @@ void NonRootPipelinesExecutor::setCancelCallback(const std::function<bool()> & c
     interactive_timeout_ms = interactive_timeout_ms_;
 }
 
-void NonRootPipelinesExecutor::asyncExecute()
+void NonRootPipelinesExecutor::executeAsync()
 {
     auto func = [this, thread_group = CurrentThread::getGroup()]
     {

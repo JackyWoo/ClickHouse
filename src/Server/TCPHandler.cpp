@@ -1184,7 +1184,7 @@ void TCPHandler::processOrdinaryQueryWithCoordination()
 
         {
             auto executor
-                = state.io.scheduling_state.pipelines.createFragmentPipelinesExecutor(pipeline, state.io.scheduling_state.storage_limits, interactive_delay / 1000);
+                = state.io.scheduling_state.pipelines.createFragmentPipelinesExecutor(query_context->getCurrentQueryId(), pipeline, state.io.scheduling_state.storage_limits, interactive_delay / 1000);
 
             auto remote_pipelines_manager = executor->getRemoteExecutorsManager();
             remote_pipelines_manager->setManagedNode(state.io.scheduling_state.remote_connections);

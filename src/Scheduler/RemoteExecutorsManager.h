@@ -26,17 +26,28 @@ public:
     struct ManagedNode
     {
         ManagedNode(const String & host_port_, const IConnectionPool::Entry & connection_)
-            : is_finished(false), host_port(host_port_), connection(connection_) {}
+            : is_finished(false), has_exception(false), cancellation_sent(false), host_port(host_port_), connection(connection_)
+        {
+        }
 
-        ManagedNode(const ManagedNode &other)
-            : is_finished(other.is_finished.load()), host_port(other.host_port), connection(other.connection) {}
+        ManagedNode(const ManagedNode & other)
+            : is_finished(other.is_finished.load())
+            , has_exception(other.has_exception.load())
+            , cancellation_sent(other.cancellation_sent.load())
+            , host_port(other.host_port)
+            , connection(other.connection)
+        {
+        }
 
         std::atomic_bool is_finished;
+        std::atomic_bool has_exception;
+        std::atomic_bool cancellation_sent; /// whether cancellation has sent
+        size_t cancellation_retry_times = 0;
         String host_port;
         IConnectionPool::Entry connection;
     };
 
-    explicit RemoteExecutorsManager(const StorageLimitsList & storage_limits_) : log(&Poco::Logger::get("RemoteExecutorsManager"))
+    explicit RemoteExecutorsManager(const String & query_id_, const StorageLimitsList & storage_limits_) : query_id(query_id_), log(&Poco::Logger::get("RemoteExecutorsManager"))
     {
         /// Remove leaf limits for remote pipelines manager.
         for (const auto & value : storage_limits_)
@@ -53,7 +64,7 @@ public:
         }
     }
 
-    void asyncReceiveReports();
+    void receiveReportsAsync();
 
     void setExceptionCallback(SetExceptionCallback exception_callback_) { exception_callback = exception_callback_; }
 
@@ -72,13 +83,14 @@ public:
     bool allFinished() const;
 
     void cancel();
+    void cancel(const String & host_port);
 
 private:
     void receiveReportFromRemoteServers(ThreadGroupPtr thread_group);
-    void processPacket(Packet & packet, ManagedNode & node) const;
+    void processPacket(Packet & packet, ManagedNode & node, bool quiet) const;
 
-    Poco::Logger * log;
 
+    String query_id;
     StorageLimitsList storage_limits;
 
     ReadProgressCallbackPtr read_progress_callback;
@@ -86,14 +98,38 @@ private:
 
     std::vector<ManagedNode> managed_nodes;
 
-    ThreadFromGlobalPool receive_reporter_thread;
+    ThreadFromGlobalPool receive_reports_thread;
 
     SetExceptionCallback exception_callback;
     std::atomic_bool cancelled = false;
 
     Poco::Event finish_event{false};
+    Poco::Event drain_finish_event{false};
+
+    Poco::Logger * log;
 };
 
 using RemoteExecutorsManagerPtr = std::shared_ptr<RemoteExecutorsManager>;
+
+class RemoteExecutorsManagerContainer
+{
+public:
+    using RemoteExecutorsManagersPtr = std::shared_ptr<RemoteExecutorsManagerContainer>;
+
+    static RemoteExecutorsManagerContainer & getInstance()
+    {
+        static RemoteExecutorsManagerContainer managers;
+        return managers;
+    }
+
+    RemoteExecutorsManagerPtr find(const String & query_id);
+
+    void add(const String & query_id, const RemoteExecutorsManagerPtr & remote_executors_manager);
+    void remove(const String & query_id);
+
+private:
+    std::mutex mutex;
+    std::unordered_map<String, RemoteExecutorsManagerPtr> managers;
+};
 
 }

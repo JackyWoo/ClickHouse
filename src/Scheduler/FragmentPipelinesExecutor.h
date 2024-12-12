@@ -111,7 +111,7 @@ public:
     void setExceptionCallback(const SetExceptionCallback & exception_callback_) { exception_callback = exception_callback_; }
 
     void execute();
-    void asyncExecute();
+    void executeAsync();
 
     void waitFinish() const;
     void cancel();
