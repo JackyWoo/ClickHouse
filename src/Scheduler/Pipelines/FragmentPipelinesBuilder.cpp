@@ -42,10 +42,10 @@ FragmentPipelines FragmentPipelinesBuilder::build(bool only_analyze)
                 for (const auto & address : shard_nodes)
                 {
                     if (address.is_local)
-                        local_host = address.toString();
+                        local_host = address.readableString();
 
-                    if (std::ranges::count(data_to.begin(), data_to.end(), address.toString()))
-                        target_host_port = address.toString();
+                    if (std::ranges::count(data_to.begin(), data_to.end(), address.readableString()))
+                        target_host_port = address.readableString();
                 }
 
                 if (target_host_port.empty())

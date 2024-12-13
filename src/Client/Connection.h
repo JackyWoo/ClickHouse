@@ -97,6 +97,7 @@ public:
     const String & getHost() const;
     UInt16 getPort() const;
     const String getHostPort() const;
+    const String getReadableHostPort() const;
     const String & getDefaultDatabase() const;
 
     Protocol::Compression getCompression() const { return compression; }

@@ -27,7 +27,7 @@ void RemoteExecutorsManager::receiveReportFromRemoteServers(ThreadGroupPtr threa
 
     try
     {
-        while (!cancelled.load())
+        while (true)
         {
             /// TODO use epoll
             for (auto & node : managed_nodes)
@@ -45,10 +45,11 @@ void RemoteExecutorsManager::receiveReportFromRemoteServers(ThreadGroupPtr threa
                     }
                     catch (...)
                     {
-                        LOG_DEBUG(log, "Fail to send cancellation to node {}", node.host_port);
+                        LOG_DEBUG(log, "Fail to send cancellation to node {}, will close connection", node.host_port);
                         node.is_finished = true;
                         node.connection->disconnect();
                     }
+                    continue;
                 }
 
                 Packet packet;
@@ -69,7 +70,6 @@ void RemoteExecutorsManager::receiveReportFromRemoteServers(ThreadGroupPtr threa
             {
                 LOG_DEBUG(log, "All nodes finished for query {}", query_id);
                 finish_event.set();
-                drain_finish_event.set();
                 return;
             }
         }
@@ -165,17 +165,17 @@ void RemoteExecutorsManager::waitFinish()
         finish_event.wait();
 }
 
-void RemoteExecutorsManager::cancel(const String & host_port)
+bool RemoteExecutorsManager::cancel(const String & host_port)
 {
     if (cancelled)
-        return;
+        return false;
 
     for (auto & node : managed_nodes)
     {
         if (node.host_port == host_port)
         {
             if (node.is_finished || node.cancellation_sent)
-                return;
+                return false;
 
             LOG_DEBUG(log, "Canceling node {}", host_port);
             try
@@ -185,20 +185,18 @@ void RemoteExecutorsManager::cancel(const String & host_port)
             }
             catch (...)
             {
-                LOG_DEBUG(log, "Failed to send cancellation to node {}", node.host_port);
-                node.cancellation_retry_times++;
-                if (node.cancellation_retry_times > 3)
-                {
-                    LOG_DEBUG(log, "Failed to send cancellation to node {} for 3 times, will close connection", node.host_port);
-                    node.connection->disconnect();
-                    node.cancellation_sent = true;
-                }
+                LOG_DEBUG(log, "Failed to send cancellation to node {}, will close connection", node.host_port);
+                node.connection->disconnect();
+                node.is_finished = true;
+                node.cancellation_sent = true;
             }
-            LOG_DEBUG(log, "canceling node {}", host_port);
-            return;
+            LOG_DEBUG(log, "Canceled node {}", host_port);
+            return true;
         }
     }
+
     /// receive_reports_thread will drain the data after cancel
+    return false;
 }
 
 void RemoteExecutorsManager::cancel()
@@ -222,14 +220,10 @@ void RemoteExecutorsManager::cancel()
             }
             catch (...)
             {
-                LOG_DEBUG(log, "Failed to send cancellation to node {}", node.host_port);
-                node.cancellation_retry_times++;
-                if (node.cancellation_retry_times > 3)
-                {
-                    LOG_DEBUG(log, "Failed to send cancellation to node {} for 3 times, will close connection", node.host_port);
-                    node.connection->disconnect();
-                    node.cancellation_sent = true;
-                }
+                LOG_DEBUG(log, "Failed to send cancellation to node {}, will close connection", node.host_port);
+                node.connection->disconnect();
+                node.is_finished = true;
+                node.cancellation_sent = true;
             }
         }
     }

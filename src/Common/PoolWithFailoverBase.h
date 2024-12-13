@@ -418,7 +418,7 @@ PoolWithFailoverBase<TNestedPool>::getOne(
 
             if (!try_result.entry.isNull())
             {
-                if (try_result.entry->getHostPort() == host_port)
+                if (try_result.entry->getReadableHostPort() == host_port)
                 {
                     return try_result;
                 }

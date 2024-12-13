@@ -55,7 +55,7 @@ protected:
     void onCancel() noexcept override;
 
 private:
-    void cancelRemote() const;
+    void finish(bool need_generate_empty_block);
 
     std::condition_variable cv;
     std::mutex mutex;

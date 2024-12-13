@@ -42,7 +42,6 @@ public:
         std::atomic_bool is_finished;
         std::atomic_bool has_exception;
         std::atomic_bool cancellation_sent; /// whether cancellation has sent
-        size_t cancellation_retry_times = 0;
         String host_port;
         IConnectionPool::Entry connection;
     };
@@ -83,7 +82,7 @@ public:
     bool allFinished() const;
 
     void cancel();
-    void cancel(const String & host_port);
+    bool cancel(const String & host_port);
 
 private:
     void receiveReportFromRemoteServers(ThreadGroupPtr thread_group);
@@ -104,7 +103,6 @@ private:
     std::atomic_bool cancelled = false;
 
     Poco::Event finish_event{false};
-    Poco::Event drain_finish_event{false};
 
     Poco::Logger * log;
 };

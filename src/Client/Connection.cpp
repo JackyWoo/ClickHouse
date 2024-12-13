@@ -621,6 +621,20 @@ const String Connection::getHostPort() const
     return Cluster::Address::toString(host, port);
 }
 
+const String Connection::getReadableHostPort() const
+{
+    String res;
+
+    /// If it looks like IPv6 address add braces to avoid ambiguity in ipv6_host:port notation
+    if (host.find_first_of(':') != std::string::npos && !host.empty() && host.back() != ']')
+        res += '[' + host + ']';
+    else
+        res += host;
+
+    res += ':' + DB::toString(port);
+    return res;
+}
+
 const String & Connection::getHost() const
 {
     return host;

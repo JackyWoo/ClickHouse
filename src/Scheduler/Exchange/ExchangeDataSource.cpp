@@ -46,7 +46,7 @@ void ExchangeDataSource::work()
     {
         LOG_DEBUG(log, "We do not need more data commonly because of limit reached, sending cancellation to node");
         executor_finished = true;
-        cancelRemote();
+        finish(false);
         return;
     }
     ISource::work();
@@ -56,8 +56,8 @@ void ExchangeDataSource::onUpdatePorts()
 {
     if (getPort().isFinished())
     {
-        LOG_DEBUG(log, "Stop reading for the output port is finished.");
-        cancelRemote();
+        LOG_DEBUG(log, "Stop reading for the output port is finished, sending cancellation to node.");
+        finish(false);
     }
 }
 
@@ -78,7 +78,7 @@ std::optional<Chunk> ExchangeDataSource::tryGenerate()
     if (block_list.empty())
     {
         LOG_DEBUG(log, "does not get a block");
-        cancelRemote();
+        finish(false);
         return {};
     }
 
@@ -88,7 +88,7 @@ std::optional<Chunk> ExchangeDataSource::tryGenerate()
     if (!block)
     {
         LOG_DEBUG(log, "Receive empty block");
-        cancelRemote();
+        finish(false);
         return {};
     }
 
@@ -122,15 +122,32 @@ std::optional<Chunk> ExchangeDataSource::tryGenerate()
 void ExchangeDataSource::onCancel() noexcept
 {
     LOG_DEBUG(log, "on cancel");
-    cancelRemote();
+    finish(true);
 }
 
-void ExchangeDataSource::cancelRemote() const
+void ExchangeDataSource::finish(bool need_generate_empty_block)
 {
-    /// we need to cancel the remote executor
-    /// TODO here we cancel the all non-root reomte executors, we'd better cancel the remote executor which is sending data to us
+    /// We need to cancel the upstream remote executors, because we do not need more data
+    /// There are 2 cases:
+    ///     1. We do not need more data because of limit reached
+    ///     2. The the upstream remote executor sends empty block to me which means it has finished
+    ///
+    /// The exchange maybe local or remote, if it is remote, we need to cancel the remote executor, if it is local, we need to cancel the source.
+
+    /// Only the initial node has remote_executors_manager, for the other nodes, they should waiting for the cancellation from the initial node.
     if (const auto remote_executors_manager = RemoteExecutorsManagerContainer::getInstance().find(query_id))
-        remote_executors_manager->cancel(source);
+    {
+        /// TODO here we cancel the all non-root reomte executors, we'd better cancel the remote executor which is sending data to us
+        if (!remote_executors_manager->cancel(source))
+            /// TODO need a better way to identify whether the exchange is local or remote
+            if (need_generate_empty_block)
+                receive(Block());
+    }
+    else
+    {
+        if (need_generate_empty_block)
+            receive(Block());
+    }
 }
 
 }
