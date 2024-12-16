@@ -100,6 +100,7 @@ bool FragmentPipelinesExecutor::pull(Block & block, uint64_t milliseconds)
 
     if (is_execution_finished)
     {
+        Stopwatch watch;
         if (non_root_executor)
         {
             if (!non_root_executor->isFinished())
@@ -119,6 +120,7 @@ bool FragmentPipelinesExecutor::pull(Block & block, uint64_t milliseconds)
                 remote_executors_manager->waitFinish();
             }
         }
+        LOG_DEBUG(log, "Finalizing the query, elapsed {}ms", watch.elapsed() / 1000);
     }
 
     return !is_execution_finished;

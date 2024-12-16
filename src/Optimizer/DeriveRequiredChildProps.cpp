@@ -228,11 +228,11 @@ AlternativeChildProperties DeriveRequiredChildProps::visit(JoinStep & step)
 {
     AlternativeChildProperties res;
 
-    /// singleton join
-    ChildProperties singleton_join_properties;
-    singleton_join_properties.push_back({.distribution = {.type = Distribution::Singleton}});
-    singleton_join_properties.push_back({.distribution = {.type = Distribution::Singleton}});
-    res.emplace_back(singleton_join_properties);
+    // /// singleton join
+    // ChildProperties singleton_join_properties;
+    // singleton_join_properties.push_back({.distribution = {.type = Distribution::Singleton}});
+    // singleton_join_properties.push_back({.distribution = {.type = Distribution::Singleton}});
+    // res.emplace_back(singleton_join_properties);
 
     /// broadcast join
     ChildProperties broadcast_join_properties;

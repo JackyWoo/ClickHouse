@@ -31,7 +31,7 @@ IProcessor::Status ExchangeDataSource::prepare()
     if (status == Status::Finished)
     {
         LOG_DEBUG(log, "We have read {} rows and do not need more data commonly because of limit reached, we will finish the source", num_rows);
-        executor_finished = true;
+        // executor_finished = true;
         return Status::Finished;
     }
 
@@ -49,22 +49,23 @@ void ExchangeDataSource::onUpdatePorts()
 
 std::optional<Chunk> ExchangeDataSource::tryGenerate()
 {
-    if (isCancelled() || finished || executor_finished)
-    {
-        LOG_DEBUG(log, "cancelled or finished, cancelled: {}, finished: {}, executor_finished: {}", isCancelled(), finished, executor_finished);
-        return {};
-    }
+    // if (isCancelled() || finished || executor_finished)
+    // {
+    //     LOG_DEBUG(log, "cancelled or finished, cancelled: {}, finished: {}, executor_finished: {}", isCancelled(), finished, executor_finished);
+    //     return {};
+    // }
 
     Block block;
     {
         std::unique_lock lk(mutex);
-        cv.wait(lk, [this] { return !block_list.empty() || executor_finished || isCancelled() || finished || receive_data_exception; });
+        cv.wait(lk, [this] { return !block_list.empty() || isCancelled() || finished || receive_data_exception; });
 
         if (unlikely(receive_data_exception))
             std::rethrow_exception(receive_data_exception);
 
         if (block_list.empty())
         {
+            LOG_DEBUG(log, "block_list is empty");
             return {};
         }
         block = std::move(block_list.front());
@@ -107,7 +108,7 @@ std::optional<Chunk> ExchangeDataSource::tryGenerate()
 void ExchangeDataSource::onCancel() noexcept
 {
     LOG_DEBUG(log, "on cancel");
-    cv.notify_one();
+    receive(Block());
 }
 
 // void ExchangeDataSource::finish(bool need_generate_empty_block)
