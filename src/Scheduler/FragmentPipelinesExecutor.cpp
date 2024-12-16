@@ -101,10 +101,24 @@ bool FragmentPipelinesExecutor::pull(Block & block, uint64_t milliseconds)
     if (is_execution_finished)
     {
         if (non_root_executor)
-            non_root_executor->waitFinish();
+        {
+            if (!non_root_executor->isFinished())
+            {
+                LOG_DEBUG(log, "non root executor is not finished, canceling");
+                non_root_executor->cancel();
+                non_root_executor->waitFinish();
+            }
+        }
 
         if (remote_executors_manager)
-            remote_executors_manager->waitFinish();
+        {
+            if (!remote_executors_manager->isFinished())
+            {
+                LOG_DEBUG(log, "remote executors manager is not finished, canceling");
+                remote_executors_manager->cancel();
+                remote_executors_manager->waitFinish();
+            }
+        }
     }
 
     return !is_execution_finished;
@@ -449,6 +463,11 @@ void NonRootPipelinesExecutor::execute()
 void NonRootPipelinesExecutor::waitFinish() const
 {
     datas->finish_event.wait();
+}
+
+bool NonRootPipelinesExecutor::isFinished() const
+{
+    return datas && datas->isFinished();
 }
 
 void NonRootPipelinesExecutor::cancel()

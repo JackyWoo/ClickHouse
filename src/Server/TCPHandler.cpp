@@ -2770,13 +2770,6 @@ void TCPHandler::sendProgress()
     state.prev_elapsed_ns = current_elapsed_ns;
 
     LOG_DEBUG(log, "Send progress read_rows {}", increment.read_rows);
-    LOG_DEBUG(log, "Send progress read_bytes {}", increment.read_bytes);
-    LOG_DEBUG(log, "Send progress total_rows_to_read {}", increment.total_rows_to_read);
-    LOG_DEBUG(log, "Send progress total_bytes_to_read {}", increment.total_bytes_to_read);
-    LOG_DEBUG(log, "Send progress written_rows {}", increment.written_rows);
-    LOG_DEBUG(log, "Send progress written_bytes {}", increment.written_bytes);
-    LOG_DEBUG(log, "Send progress result_rows {}", increment.result_rows);
-    LOG_DEBUG(log, "Send progress result_bytes {}", increment.result_bytes);
     LOG_DEBUG(log, "Send progress elapsed_ns {}", increment.elapsed_ns);
 
     increment.write(*out, client_tcp_protocol_version);

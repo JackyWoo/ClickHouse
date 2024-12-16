@@ -115,7 +115,7 @@ void FragmentScheduler::assignLeafFragment(const FragmentPtr & fragment)
         String host_port;
         if (shard_info.isLocal())
         {
-            local_host = shard_info.local_addresses[0].toString();
+            local_host = shard_info.local_addresses[0].readableString();
             host_port = local_host;
             /// the connection of local host is empty
 
@@ -143,7 +143,7 @@ void FragmentScheduler::assignLeafFragment(const FragmentPtr & fragment)
             else
             {
                 connection = getConnection(shard_info);
-                host_port = connection->getHostPort();
+                host_port = connection->getReadableHostPort();
                 shard_num_to_host[shard_info.shard_num] = host_port;
             }
         }

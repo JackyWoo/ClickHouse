@@ -79,7 +79,7 @@ public:
     void setProfileInfoCallback(ProfileInfoCallback callback) { profile_info_callback = std::move(callback); }
 
     void waitFinish();
-    bool allFinished() const;
+    bool isFinished() const;
 
     void cancel();
     bool cancel(const String & host_port);

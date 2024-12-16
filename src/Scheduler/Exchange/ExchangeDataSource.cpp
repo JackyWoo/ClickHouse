@@ -28,67 +28,52 @@ IProcessor::Status ExchangeDataSource::prepare()
 
     const auto status = ISource::prepare();
 
-    if (executor_finished)
-        return Status::Finished;
-
     if (status == Status::Finished)
     {
-        need_drain = true;
-        return Status::Ready;
+        LOG_DEBUG(log, "We have read {} rows and do not need more data commonly because of limit reached, we will finish the source", num_rows);
+        executor_finished = true;
+        return Status::Finished;
     }
 
     return status;
 }
 
-void ExchangeDataSource::work()
-{
-    if (need_drain)
-    {
-        LOG_DEBUG(log, "We do not need more data commonly because of limit reached, sending cancellation to node");
-        executor_finished = true;
-        finish(false);
-        return;
-    }
-    ISource::work();
-}
-
 void ExchangeDataSource::onUpdatePorts()
 {
-    if (getPort().isFinished())
-    {
-        LOG_DEBUG(log, "Stop reading for the output port is finished, sending cancellation to node.");
-        finish(false);
-    }
+    // if (getPort().isFinished())
+    // {
+    //     LOG_DEBUG(log, "We have read {} rows, and we need to stop reading for the output port is finished, we will finish the source.", num_rows);
+    //     executor_finished = true;
+    // }
 }
 
 std::optional<Chunk> ExchangeDataSource::tryGenerate()
 {
-    if (isCancelled())
+    if (isCancelled() || finished || executor_finished)
     {
-        LOG_DEBUG(log, "cancelled or finished, cancelled: {}, finished: {}", isCancelled(), finished);
+        LOG_DEBUG(log, "cancelled or finished, cancelled: {}, finished: {}, executor_finished: {}", isCancelled(), finished, executor_finished);
         return {};
     }
 
-    std::unique_lock lk(mutex);
-    cv.wait(lk, [this] { return !block_list.empty() || isCancelled() || finished || receive_data_exception; });
-
-    if (unlikely(receive_data_exception))
-        std::rethrow_exception(receive_data_exception);
-
-    if (block_list.empty())
+    Block block;
     {
-        LOG_DEBUG(log, "does not get a block");
-        finish(false);
-        return {};
-    }
+        std::unique_lock lk(mutex);
+        cv.wait(lk, [this] { return !block_list.empty() || executor_finished || isCancelled() || finished || receive_data_exception; });
 
-    Block block = std::move(block_list.front());
-    block_list.pop_front();
+        if (unlikely(receive_data_exception))
+            std::rethrow_exception(receive_data_exception);
+
+        if (block_list.empty())
+        {
+            return {};
+        }
+        block = std::move(block_list.front());
+        block_list.pop_front();
+    }
 
     if (!block)
     {
         LOG_DEBUG(log, "Receive empty block");
-        finish(false);
         return {};
     }
 
@@ -122,32 +107,31 @@ std::optional<Chunk> ExchangeDataSource::tryGenerate()
 void ExchangeDataSource::onCancel() noexcept
 {
     LOG_DEBUG(log, "on cancel");
-    finish(true);
+    cv.notify_one();
 }
 
-void ExchangeDataSource::finish(bool need_generate_empty_block)
-{
-    /// We need to cancel the upstream remote executors, because we do not need more data
-    /// There are 2 cases:
-    ///     1. We do not need more data because of limit reached
-    ///     2. The the upstream remote executor sends empty block to me which means it has finished
-    ///
-    /// The exchange maybe local or remote, if it is remote, we need to cancel the remote executor, if it is local, we need to cancel the source.
-
-    /// Only the initial node has remote_executors_manager, for the other nodes, they should waiting for the cancellation from the initial node.
-    if (const auto remote_executors_manager = RemoteExecutorsManagerContainer::getInstance().find(query_id))
-    {
-        /// TODO here we cancel the all non-root reomte executors, we'd better cancel the remote executor which is sending data to us
-        if (!remote_executors_manager->cancel(source))
-            /// TODO need a better way to identify whether the exchange is local or remote
-            if (need_generate_empty_block)
-                receive(Block());
-    }
-    else
-    {
-        if (need_generate_empty_block)
-            receive(Block());
-    }
-}
+// void ExchangeDataSource::finish(bool need_generate_empty_block)
+// {
+//     /// We need to cancel the upstream remote executors, because we do not need more data
+//     /// There are 2 cases:
+//     ///     1. We do not need more data because of limit reached
+//     ///     2. The the upstream remote executor sends empty block to me which means it has finished
+//     ///
+//     /// The exchange maybe local or remote, if it is remote, we need to cancel the remote executor, if it is local, we need to cancel the source.
+//
+//     /// Only the initial node has remote_executors_manager, for the other nodes, they should waiting for the cancellation from the initial node.
+//     if (const auto remote_executors_manager = RemoteExecutorsManagerContainer::getInstance().find(query_id))
+//     {
+//         /// TODO here we cancel the all non-root remote executors in a node, we'd better cancel the remote executor which is sending data to us
+//         remote_executors_manager->cancel(source);
+//         // receive(Block());
+//     }
+//
+//     // if (need_generate_empty_block)
+//     // {
+//     //     LOG_DEBUG(log, "We should stop generating data by provide empty block, now we have read {}", num_rows);
+//     //     receive(Block());
+//     // }
+// }
 
 }

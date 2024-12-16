@@ -192,7 +192,7 @@ String Cluster::Address::toString(const String & host_name, UInt16 port)
     return escapeForFileName(host_name) + ':' + DB::toString(port);
 }
 
-String Cluster::Address::readableString() const
+String Cluster::Address::readableString(const String & host_name, UInt16 port)
 {
     String res;
 
@@ -204,6 +204,11 @@ String Cluster::Address::readableString() const
 
     res += ':' + DB::toString(port);
     return res;
+}
+
+String Cluster::Address::readableString() const
+{
+    return readableString(host_name, port);
 }
 
 std::pair<String, UInt16> Cluster::Address::fromString(const String & host_port_string)

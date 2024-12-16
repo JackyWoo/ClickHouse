@@ -114,6 +114,7 @@ public:
     void executeAsync();
 
     void waitFinish() const;
+    bool isFinished() const;
     void cancel();
 
     struct Data;

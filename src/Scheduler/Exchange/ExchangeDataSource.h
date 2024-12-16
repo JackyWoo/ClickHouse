@@ -35,8 +35,6 @@ public:
     void receive(std::exception_ptr exception);
 
     Status prepare() override;
-    void work() override;
-
     String getName() const override { return "ExchangeDataSource"; }
 
     void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr /*counter*/) override { }
@@ -55,7 +53,7 @@ protected:
     void onCancel() noexcept override;
 
 private:
-    void finish(bool need_generate_empty_block);
+    // void finish();
 
     std::condition_variable cv;
     std::mutex mutex;
@@ -71,8 +69,7 @@ private:
     bool add_aggregation_info;
     size_t num_rows = 0;
 
-    bool need_drain = false;
-    bool executor_finished = false;
+    std::atomic_bool executor_finished = false;
 
     // bool is_async_state = false;
 

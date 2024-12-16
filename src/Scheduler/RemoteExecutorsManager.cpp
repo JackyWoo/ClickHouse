@@ -39,7 +39,7 @@ void RemoteExecutorsManager::receiveReportFromRemoteServers(ThreadGroupPtr threa
                 {
                     try
                     {
-                        LOG_DEBUG(log, "Sending cancellation to node {}", node.host_port);
+                        LOG_DEBUG(log, "Got exception, sending cancellation to node {}", node.host_port);
                         node.connection->sendCancel();
                         node.cancellation_sent = true;
                     }
@@ -66,7 +66,7 @@ void RemoteExecutorsManager::receiveReportFromRemoteServers(ThreadGroupPtr threa
                 processPacket(packet, node, false);
             }
 
-            if (allFinished())
+            if (isFinished())
             {
                 LOG_DEBUG(log, "All nodes finished for query {}", query_id);
                 finish_event.set();
@@ -96,20 +96,20 @@ void RemoteExecutorsManager::processPacket(Packet & packet, ManagedNode & node, 
             break;
         }
         case Protocol::Server::ProfileInfo: {
-            LOG_TRACE(log, "Got ProfileInfo {}", node.host_port);
+            // LOG_TRACE(log, "Got ProfileInfo {}", node.host_port);
             if (profile_info_callback)
                 profile_info_callback(packet.profile_info);
             break;
         }
         case Protocol::Server::Log: {
-            LOG_TRACE(log, "Got Log {}", node.host_port);
+            // LOG_TRACE(log, "Got Log {}", node.host_port);
             /// Pass logs from remote server to client
             if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
                 log_queue->pushBlock(std::move(packet.block));
             break;
         }
         case Protocol::Server::Progress: {
-            LOG_TRACE(log, "Got Progress {}", node.host_port);
+            // LOG_TRACE(log, "Got Progress {}", node.host_port);
             if (read_progress_callback)
             {
                 LOG_DEBUG(log, "{} update progress read_rows {}", node.host_port, packet.progress.read_rows);
@@ -124,7 +124,7 @@ void RemoteExecutorsManager::processPacket(Packet & packet, ManagedNode & node, 
             break;
         }
         case Protocol::Server::ProfileEvents: {
-            LOG_TRACE(log, "Got ProfileEvents from {}", node.host_port);
+            // LOG_TRACE(log, "Got ProfileEvents from {}", node.host_port);
             /// Pass profile events from remote server to client
             if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
                 if (!profile_queue->emplace(std::move(packet.block)))
@@ -143,7 +143,7 @@ void RemoteExecutorsManager::processPacket(Packet & packet, ManagedNode & node, 
     }
 }
 
-bool RemoteExecutorsManager::allFinished() const
+bool RemoteExecutorsManager::isFinished() const
 {
     for (const auto & node : managed_nodes)
         if (!node.is_finished)
@@ -161,7 +161,7 @@ void RemoteExecutorsManager::receiveReportsAsync()
 
 void RemoteExecutorsManager::waitFinish()
 {
-    if (!allFinished())
+    if (!isFinished())
         finish_event.wait();
 }
 
@@ -241,6 +241,7 @@ RemoteExecutorsManager::~RemoteExecutorsManager()
 {
     try
     {
+        LOG_DEBUG(log, "Destroying RemoteExecutorsManager for query {}", query_id);
         cancel();
     }
     catch (...)

@@ -157,6 +157,7 @@ public:
 
         /// Returns 'host_name:port'
         String readableString() const;
+        static String readableString(const String & host_name, UInt16 port);
 
         static String toString(const String & host_name, UInt16 port);
 
